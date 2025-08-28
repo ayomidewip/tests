@@ -1,0 +1,29 @@
+{
+  "name": "app-base-tests",
+  "version": "1.0.0",
+  "description": "Test suite for App Base API",
+  "scripts": {
+    "test": "npx jest"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^17.2.1",
+    "form-data": "^4.0.4",
+    "handlebars": "^4.7.8",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.18.0",
+    "mongoose": "^8.17.0",
+    "multer": "^2.0.2",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/preset-env": "^7.28.0",
+    "babel-jest": "^30.0.5",
+    "jest": "^30.0.5",
+    "mongodb-memory-server": "^10.2.0",
+    "nodemailer": "^7.0.5",
+    "speakeasy": "^2.0.0"
+  }
+}
