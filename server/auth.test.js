@@ -1123,19 +1123,43 @@ describe('Authentication Layer - Comprehensive Tests', () => {
                 expect(response.data.success).toBe(false);
             });
 
-            test('should handle SQL injection attempts in signup', async () => {
-                const sqlInjectionData = {
-                    firstName: "'; DROP TABLE users; --",
-                    lastName: 'Test',
-                    username: 'sqltest',
-                    email: 'sql@example.com',
+            test('should handle NoSQL injection attempts in signup', async () => {
+                const noSqlInjectionData = {
+                    firstName: 'Test',
+                    lastName: 'User',
+                    username: 'nosqltest',
+                    email: { $ne: null }, // NoSQL injection attempt
                     password: 'TestPass123!'
                 };
 
                 client.setToken(null);
-                const response = await client.post('/api/v1/auth/signup', sqlInjectionData);
+                const response = await client.post('/api/v1/auth/signup', noSqlInjectionData);
+                
+                // Should be rejected due to validation - email must be string, not object
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
+                expect(response.data.message).toContain('email');
+            });
+
+            test('should safely store special characters as literal text', async () => {
+                const specialCharsData = {
+                    firstName: "'; DROP TABLE users; --", // This is just text to MongoDB
+                    lastName: '<script>alert("xss")</script>',
+                    username: 'specialtest',
+                    email: 'special@example.com',
+                    password: 'TestPass123!'
+                };
+
+                client.setToken(null);
+                const response = await client.post('/api/v1/auth/signup', specialCharsData);
+                
+                // Should succeed - MongoDB stores these as literal strings
+                expect(response.status).toBe(201);
+                expect(response.data.success).toBe(true);
+                
+                // Verify the content was stored as literal text (not executed)
+                expect(response.data.user.firstName).toBe("'; DROP TABLE users; --");
+                expect(response.data.user.lastName).toBe('<script>alert("xss")</script>');
             });
 
             test('should handle extremely long input values', async () => {

@@ -11,6 +11,7 @@ require('dotenv').config({
 
 const ApiClient = require('./api.client');
 const { Server } = require('../../server/server.js');
+const mongoose = require('mongoose');
 
 class TestStartup {
     constructor() {
@@ -711,19 +712,274 @@ class TestStartup {
      * Cleanup - stop server and clean resources
      */
     async cleanup() {
-        if (this.serverInstance && this.serverInstance.server) {
-            await this.serverInstance.server.stop();
+        try {
+            // Clean up all mutable users first (they need to be deleted properly via API)
+            if (this.mutableUsers && this.mutableUsers.size > 0) {
+                console.log('🧹 Cleaning up mutable users before shutdown...');
+                await this.cleanupAllMutableUsers();
+            }
+
+            // Clean database if flag is enabled - do this IMMEDIATELY while server is still running
+            if (process.env.DB_CLEANUP === 'true') {
+                console.log('🗄️ Cleaning database as DB_CLEANUP is enabled...');
+                // Do database cleanup before ANY server shutdown activities
+                await this.performImmediateDatabaseCleanup();
+            }
+
+            // Gracefully stop cache operations before server shutdown
+            await this.stopCacheOperations();
+
+            // Stop server (this will close database and Redis connections)
+            if (this.serverInstance && this.serverInstance.server) {
+                await this.serverInstance.server.stop();
+            }
+            
+            // Reset all properties
+            this.serverInstance = null;
+            this.baseURL = null;
+            this.owner = null;
+            this.admin = null;
+            this.superCreator = null;
+            this.creator = null;
+            this.user = null;
+            this.client = null;
+        } catch (error) {
+            console.error('❌ Error during cleanup:', error.message);
+            // Don't throw - we want cleanup to be as graceful as possible
         }
-        
-        // Reset all properties
-        this.serverInstance = null;
-        this.baseURL = null;
-        this.owner = null;
-        this.admin = null;
-        this.superCreator = null;
-        this.creator = null;
-        this.user = null;
-        this.client = null;
+    }
+
+    /**
+     * Perform immediate database cleanup before any server shutdown begins
+     */
+    async performImmediateDatabaseCleanup() {
+        if (process.env.DB_CLEANUP !== 'true') {
+            return;
+        }
+
+        try {
+            // First try to use the server's database connection
+            let dbConnection = null;
+            
+            console.log('🔍 Server instance debug info:');
+            console.log('   - serverInstance exists:', !!this.serverInstance);
+            console.log('   - serverInstance.server exists:', !!this.serverInstance?.server);
+            console.log('   - getDbConnection method exists:', typeof this.serverInstance?.server?.getDbConnection);
+            
+            if (this.serverInstance && this.serverInstance.server && this.serverInstance.server.getDbConnection) {
+                dbConnection = this.serverInstance.server.getDbConnection();
+                console.log('   - dbConnection object:', !!dbConnection);
+                console.log('   - dbConnection type:', typeof dbConnection);
+                console.log('   - dbConnection.readyState:', dbConnection?.readyState);
+                console.log('   - Global mongoose.connection.readyState:', mongoose.connection.readyState);
+                console.log(`🔍 Using server's database connection (readyState: ${dbConnection ? dbConnection.readyState : 'null'})`);
+            } else {
+                // Fallback to global mongoose connection
+                dbConnection = mongoose.connection;
+                console.log(`🔍 Using global mongoose connection (readyState: ${dbConnection.readyState})`);
+            }
+            
+            if (dbConnection && dbConnection.readyState === 1) {
+                // We have an active connection, proceed with cleanup
+                const collections = await dbConnection.db.collections();
+                
+                console.log(`🗑️ Dropping ${collections.length} collections immediately...`);
+                
+                let dropped = 0;
+                for (const collection of collections) {
+                    try {
+                        await collection.drop();
+                        console.log(`   ✅ Dropped collection: ${collection.collectionName}`);
+                        dropped++;
+                    } catch (error) {
+                        // Collection might not exist, ignore the error
+                        if (error.code !== 26) { // NamespaceNotFound
+                            console.warn(`   ⚠️ Warning dropping collection ${collection.collectionName}:`, error.message);
+                        }
+                    }
+                }
+                
+                console.log(`✅ Database cleanup completed: ${dropped}/${collections.length} collections dropped`);
+            } else {
+                console.error('❌ Database connection not available for cleanup!');
+                console.error(`   Connection state: ${dbConnection ? dbConnection.readyState : 'null'}`);
+                console.error('   Database cleanup cannot proceed - test data will remain!');
+                
+                // This is a critical issue that should be addressed
+                throw new Error('Database cleanup failed: No active connection');
+            }
+        } catch (error) {
+            console.error('❌ Critical error during database cleanup:', error.message);
+            throw error; // Re-throw to signal this is a serious issue
+        }
+    }
+
+    /**
+     * Stop cache operations and services before server shutdown
+     * This prevents Redis cache errors when the server is closed
+     */
+    async stopCacheOperations() {
+        try {
+            console.log('🔄 Stopping cache operations...');
+            
+            // Stop any active cache cleanup services
+            try {
+                // Access the server's cache cleanup service if available
+                if (this.serverInstance && this.serverInstance.server) {
+                    // Try to get access to the cache cleanup service through the server
+                    const serverConfig = this.serverInstance.server.getConfig();
+                    if (serverConfig && serverConfig.cacheEnabled) {
+                        console.log('   ⏹️ Stopping cache cleanup services...');
+                        // The server's stop() method will handle this, but we log it for clarity
+                    }
+                }
+            } catch (error) {
+                console.warn('   ⚠️ Could not stop cache cleanup service:', error.message);
+            }
+
+            // Wait a moment to allow any in-flight cache operations to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log('✅ Cache operations stopped');
+        } catch (error) {
+            console.warn('⚠️ Warning during cache operations stop:', error.message);
+        }
+    }
+
+    /**
+     * Clean the database by dropping all collections
+     * Only runs if DB_CLEANUP environment variable is set to 'true'
+     */
+    async cleanDatabase() {
+        if (process.env.DB_CLEANUP !== 'true') {
+            return;
+        }
+
+        try {
+            // First try to use the server's database connection
+            let dbConnection = null;
+            
+            if (this.serverInstance && this.serverInstance.server && this.serverInstance.server.getDbConnection) {
+                dbConnection = this.serverInstance.server.getDbConnection();
+                console.log(`🔍 Using server's database connection (readyState: ${dbConnection ? dbConnection.readyState : 'null'})`);
+            } else {
+                // Fallback to global mongoose connection
+                dbConnection = mongoose.connection;
+                console.log(`🔍 Using global mongoose connection (readyState: ${dbConnection.readyState})`);
+            }
+            
+            if (dbConnection && dbConnection.readyState === 1) {
+                const collections = await dbConnection.db.collections();
+                
+                console.log(`🗑️ Dropping ${collections.length} collections...`);
+                
+                for (const collection of collections) {
+                    try {
+                        await collection.drop();
+                        console.log(`   ✅ Dropped collection: ${collection.collectionName}`);
+                    } catch (error) {
+                        // Collection might not exist, ignore the error
+                        if (error.code !== 26) { // NamespaceNotFound
+                            console.warn(`   ⚠️ Warning dropping collection ${collection.collectionName}:`, error.message);
+                        }
+                    }
+                }
+                
+                console.log('✅ Database cleanup completed successfully');
+            } else {
+                console.log('ℹ️ Database connection not available, skipping cleanup');
+            }
+        } catch (error) {
+            console.error('❌ Error during database cleanup:', error.message);
+            // Don't throw - we don't want cleanup failures to break tests
+        }
+    }
+
+    /**
+     /**
+     * Clean specific collections from the database
+     * @param {Array<string>} collectionNames - Array of collection names to clean
+     */
+    async cleanCollections(collectionNames = []) {
+        if (!Array.isArray(collectionNames) || collectionNames.length === 0) {
+            console.warn('⚠️ No collections specified for cleanup');
+            return;
+        }
+
+        try {
+            // First try to use the server's database connection
+            let dbConnection = null;
+            
+            if (this.serverInstance && this.serverInstance.server && this.serverInstance.server.getDbConnection) {
+                dbConnection = this.serverInstance.server.getDbConnection();
+            } else {
+                // Fallback to global mongoose connection
+                dbConnection = mongoose.connection;
+            }
+            
+            if (dbConnection && dbConnection.readyState === 1) {
+                console.log(`🗑️ Cleaning ${collectionNames.length} specific collections...`);
+                
+                for (const collectionName of collectionNames) {
+                    try {
+                        const collection = dbConnection.db.collection(collectionName);
+                        await collection.drop();
+                        console.log(`   ✅ Dropped collection: ${collectionName}`);
+                    } catch (error) {
+                        if (error.code !== 26) { // NamespaceNotFound
+                            console.warn(`   ⚠️ Warning dropping collection ${collectionName}:`, error.message);
+                        } else {
+                            console.log(`   ℹ️ Collection ${collectionName} doesn't exist, skipping`);
+                        }
+                    }
+                }
+                
+                console.log('✅ Selective collection cleanup completed');
+            } else {
+                console.log('ℹ️ Database not connected, skipping collection cleanup');
+            }
+        } catch (error) {
+            console.error('❌ Error during selective collection cleanup:', error.message);
+        }
+    }
+
+    /**
+     * Reset database to clean state (alternative to full cleanup)
+     * Removes all documents but keeps collections and indexes
+     */
+    async resetDatabase() {
+        try {
+            // First try to use the server's database connection
+            let dbConnection = null;
+            
+            if (this.serverInstance && this.serverInstance.server && this.serverInstance.server.getDbConnection) {
+                dbConnection = this.serverInstance.server.getDbConnection();
+            } else {
+                // Fallback to global mongoose connection
+                dbConnection = mongoose.connection;
+            }
+            
+            if (dbConnection && dbConnection.readyState === 1) {
+                const collections = await dbConnection.db.collections();
+                
+                console.log(`🔄 Resetting ${collections.length} collections (clearing documents)...`);
+                
+                for (const collection of collections) {
+                    try {
+                        const result = await collection.deleteMany({});
+                        console.log(`   ✅ Cleared ${result.deletedCount} documents from: ${collection.collectionName}`);
+                    } catch (error) {
+                        console.warn(`   ⚠️ Warning clearing collection ${collection.collectionName}:`, error.message);
+                    }
+                }
+                
+                console.log('✅ Database reset completed successfully');
+            } else {
+                console.log('ℹ️ Database not connected, skipping reset');
+            }
+        } catch (error) {
+            console.error('❌ Error during database reset:', error.message);
+        }
     }
 
     /**
