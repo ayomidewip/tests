@@ -4,9 +4,6 @@
  */
 
 const TestStartup = require('../utils/test.startup');
-const mongoose = require('mongoose');
-const path = require('path');
-const fs = require('fs').promises;
 
 describe('File Comprehensive Tests', () => {
     let testStartup;

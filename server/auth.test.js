@@ -6,8 +6,6 @@
 const TestStartup = require('../utils/test.startup');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
-const speakeasy = require('speakeasy');
-const crypto = require('crypto');
 
 describe('Authentication Layer - Comprehensive Tests', () => {
     let testStartup;

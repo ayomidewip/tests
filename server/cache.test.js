@@ -4,7 +4,6 @@
  */
 
 const TestStartup = require('../utils/test.startup');
-const mongoose = require('mongoose');
 
 describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () => {
     let testStartup;
