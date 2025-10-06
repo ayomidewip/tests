@@ -28,8 +28,8 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Health Check Endpoints', () => {
         describe('GET /api/v1/health', () => {
             test('should return detailed health status for public access', async () => {
-                // Use client without token for public endpoint
-                client.setToken(null);
+                // Clear cookies for public endpoint access
+                client.clearCookies();
                 const response = await client.get('/api/v1/health');
 
                 expect(response.status).toBe(200);
@@ -48,7 +48,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should never cache health responses', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const response1 = await client.get('/api/v1/health');
                 const response2 = await client.get('/api/v1/health');
 
@@ -60,7 +60,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return consistent structure across multiple calls', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const responses = await Promise.all([
                     client.get('/api/v1/health'),
                     client.get('/api/v1/health'),
@@ -84,7 +84,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Logs Management Endpoints', () => {
         describe('GET /api/v1/logs - Authentication and Authorization', () => {
             test('should deny access without authentication', async () => {
-                client.setToken(null);
+                await testStartup.logout(); // Clear any existing authentication
                 
                 const response = await client.get('/api/v1/logs');
                 
@@ -96,7 +96,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 const nonAdminUsers = ['user', 'creator', 'superCreator'];
                 
                 for (const userType of nonAdminUsers) {
-                    client.setToken(testStartup.getTokenForUser(userType));
+                    await testStartup.loginAsUser(userType);
                     
                     const response = await client.get('/api/v1/logs');
                     
@@ -110,7 +110,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 const adminUsers = ['admin', 'owner'];
                 
                 for (const userType of adminUsers) {
-                    client.setToken(testStartup.getTokenForUser(userType));
+                    await testStartup.loginAsUser(userType);
                     const response = await client.get('/api/v1/logs');
                     expect(response.status).toBe(200);
                     expect(response.data.success).toBe(true);
@@ -123,7 +123,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 // This test is incorrect - admins should have access to logs
                 // Admins have MANAGE_ALL_USERS permission which allows log access
                 // This test should be removed or changed to test a different scenario
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/logs');
                 expect(response.status).toBe(200);
                 expect(response.data.success).toBe(true);
@@ -131,9 +131,9 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
         });
 
         describe('GET /api/v1/logs - Functionality and Edge Cases', () => {
-            beforeEach(() => {
+            beforeEach(async () => {
                 // Set owner token for these functional tests (only OWNER has log access)
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
             });
 
             test('should return logs with proper structure', async () => {
@@ -212,7 +212,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('GET /api/v1/logs/:id', () => {
             test('should return 400 for invalid ObjectId format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.get('/api/v1/logs/invalid-id');
                 
@@ -222,7 +222,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
             test('should return 404 for non-existent log ID', async () => {
                 const fakeId = new mongoose.Types.ObjectId();
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.get(`/api/v1/logs/${fakeId}`);
                 
@@ -232,7 +232,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
             test('should deny access for non-admin users', async () => {
                 const fakeId = new mongoose.Types.ObjectId();
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get(`/api/v1/logs/${fakeId}`);
                 
@@ -243,7 +243,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('GET /api/v1/logs/stats', () => {
             test('should return log statistics for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/logs/stats');
 
                 expect(response.status).toBe(200);
@@ -252,7 +252,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should support userId filtering', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
                 const response = await client.get(`/api/v1/logs/stats?userId=${userId}`);
 
@@ -261,7 +261,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should cache responses with user-aware keys', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const allStatsResponse = await client.get('/api/v1/logs/stats');
                 const userStatsResponse = await client.get(`/api/v1/logs/stats?userId=${testStartup.user.id}`);
@@ -271,7 +271,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/logs/stats');
                 
@@ -282,7 +282,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('DELETE /api/v1/logs', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.delete('/api/v1/logs');
                 
@@ -291,7 +291,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should clear logs for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Log clearing might fail with server error
                 const response = await client.delete('/api/v1/logs');
@@ -305,7 +305,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Email System Endpoints', () => {
         describe('POST /api/v1/email/template/render', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.post('/api/v1/email/template/render', {
                     template: 'welcome',
@@ -317,7 +317,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle missing template data', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.post('/api/v1/email/template/render', {});
                 
@@ -326,7 +326,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle non-existent template', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 // Non-existent template should return 500 error
                 const response = await client.post('/api/v1/email/template/render', {
@@ -337,7 +337,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 expect(response.status).toBe(500);
                 expect(response.data.success).toBe(false);
             });            test('should handle malformed template data', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Malformed template data is handled gracefully and returns success
                 const response = await client.post('/api/v1/email/template/render', {
@@ -352,7 +352,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('POST /api/v1/email/test', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.post('/api/v1/email/test', {
                     to: 'test@example.com',
@@ -364,7 +364,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle missing email configuration gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 // Email test endpoint returns 400 when configuration is missing
                 const response = await client.post('/api/v1/email/test', {
@@ -375,7 +375,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
             });            test('should validate email format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.post('/api/v1/email/test', {
                     to: 'invalid-email-format',
@@ -387,7 +387,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle missing required fields', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.post('/api/v1/email/test', {
                     subject: 'Test Email'
@@ -403,7 +403,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Statistics Endpoints', () => {
         describe('GET /api/v1/stats/overview', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/stats/overview');
                 
@@ -412,7 +412,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return overview statistics for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/stats/overview');
 
                 expect(response.status).toBe(200);
@@ -420,7 +420,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should support period parameter', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const periods = ['7d', '30d', '90d', '1y'];
                 
                 for (const period of periods) {
@@ -430,7 +430,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle invalid period parameter', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 // Invalid period should return 400 error
                 const response = await client.get('/api/v1/stats/overview?period=invalid');
@@ -438,7 +438,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
             });            test('should cache responses with period-aware keys', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response1 = await client.get('/api/v1/stats/overview?period=7d');
                 const response2 = await client.get('/api/v1/stats/overview?period=30d');
@@ -450,7 +450,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('GET /api/v1/stats/performance', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/stats/performance');
                 
@@ -459,7 +459,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return performance statistics for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/stats/performance');
 
                 expect(response.status).toBe(200);
@@ -467,7 +467,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should support period parameter with validation', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const validPeriods = ['1d', '7d', '30d'];
                 
                 for (const period of validPeriods) {
@@ -477,7 +477,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should cache responses with period-aware keys', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response1 = await client.get('/api/v1/stats/performance?period=7d');
                 const response2 = await client.get('/api/v1/stats/performance?period=7d');
@@ -491,7 +491,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Cache Management Endpoints', () => {
         describe('GET /api/v1/cache/stats', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/cache/stats');
                 
@@ -500,7 +500,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return cache statistics for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/stats');
 
                 expect(response.status).toBe(200);
@@ -510,7 +510,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle Redis unavailable gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // In test environment, Redis should be available and cache stats should work
                 const response = await client.get('/api/v1/cache/stats');
@@ -520,7 +520,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should cache stats for short duration', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response1 = await client.get('/api/v1/cache/stats');
                 const response2 = await client.get('/api/v1/cache/stats');
@@ -532,7 +532,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('DELETE /api/v1/cache', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.delete('/api/v1/cache');
                 
@@ -541,7 +541,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should clear cache for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.delete('/api/v1/cache');
 
                 expect(response.status).toBe(200);
@@ -550,7 +550,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle Redis unavailable gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // In test environment, Redis should be available and cache clear should work
                 const response = await client.delete('/api/v1/cache');
@@ -562,7 +562,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('GET /api/v1/cache/cleanup', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/cache/cleanup');
                 
@@ -571,7 +571,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return cleanup status for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -579,7 +579,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should never cache cleanup status', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response1 = await client.get('/api/v1/cache/cleanup');
                 const response2 = await client.get('/api/v1/cache/cleanup');
@@ -592,7 +592,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('POST /api/v1/cache/cleanup', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.post('/api/v1/cache/cleanup');
                 
@@ -601,7 +601,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should trigger cache cleanup for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.post('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -609,7 +609,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle concurrent cleanup requests', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const promises = [
                     client.post('/api/v1/cache/cleanup'),
@@ -627,7 +627,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('GET /api/v1/cache/health', () => {
             test('should deny access for non-admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/cache/health');
                 
@@ -636,7 +636,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return cache health for admin users', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/health');
 
                 expect(response.status).toBe(200);
@@ -647,7 +647,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should never cache health responses', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response1 = await client.get('/api/v1/cache/health');
                 const response2 = await client.get('/api/v1/cache/health');
@@ -664,7 +664,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Error Handling and Edge Cases', () => {
         describe('Route Validation', () => {
             test('should return 404 for non-existent routes', async () => {
-                client.setToken(null); // Clear token for public test
+                client.clearCookies(); // Clear token for public test
                 
                 const response = await client.get('/api/v1/non-existent-route');
                 
@@ -673,7 +673,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should return 404 for invalid nested routes', async () => {
-                client.setToken(null); // Clear token for public test
+                client.clearCookies(); // Clear token for public test
                 
                 const response = await client.get('/api/v1/logs/invalid/nested/route');
                 
@@ -684,7 +684,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('Request Validation', () => {
             test('should handle malformed JSON payloads', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.post('/api/v1/email/template/render', 'invalid-json');
                 
@@ -693,7 +693,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle oversized request payloads', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const largePayload = {
                     template: 'welcome',
                     data: {
@@ -710,7 +710,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('Concurrent Request Handling', () => {
             test('should handle concurrent requests to same endpoint', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const promises = Array(10).fill().map(() => 
                     client.get('/api/v1/logs?page=1&limit=1')
@@ -726,7 +726,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('should handle mixed concurrent requests', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const promises = [
                     client.get('/api/v1/health'),
@@ -748,25 +748,27 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
 
         describe('Authentication Edge Cases', () => {
             test('should handle expired tokens gracefully', async () => {
-                client.setToken('expired.token.here');
+                // Clear cookies to test unauthorized access
+                client.clearCookies();
                 
                 const response = await client.get('/api/v1/logs');
                 
-                expect(response.status).toBe(403);
+                expect(response.status).toBe(401);
                 expect(response.data.success).toBe(false);
             });
 
             test('should handle malformed tokens gracefully', async () => {
-                client.setToken('malformed-token');
+                // Clear cookies to test unauthorized access
+                client.clearCookies();
                 
                 const response = await client.get('/api/v1/logs');
                 
-                expect(response.status).toBe(403);
+                expect(response.status).toBe(401);
                 expect(response.data.success).toBe(false);
             });
 
             test('should handle missing authorization header', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 
                 const response = await client.get('/api/v1/logs');
                 
@@ -779,7 +781,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
     describe('Performance and Load Testing', () => {
         describe('Response Time Validation', () => {
             test('health check should respond quickly', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const startTime = Date.now();
                 
                 const response = await client.get('/api/v1/health');
@@ -790,7 +792,7 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
 
             test('cached endpoints should improve response time', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // First request (uncached)
                 const startTime1 = Date.now();

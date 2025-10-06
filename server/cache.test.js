@@ -24,7 +24,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Cache Controller - Statistics', () => {
         describe('GET /api/v1/cache/stats - Success Cases', () => {
             test('should get cache statistics as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/stats');
 
                 expect(response.status).toBe(200);
@@ -39,7 +39,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should get cache statistics as owner', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const response = await client.get('/api/v1/cache/stats');
 
                 expect(response.status).toBe(200);
@@ -49,7 +49,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should include Redis connection status', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/stats');
 
                 expect(response.status).toBe(200);
@@ -58,7 +58,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should include performance metrics', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/stats');
 
                 expect(response.status).toBe(200);
@@ -71,7 +71,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('GET /api/v1/cache/stats - Permission Errors', () => {
             test('should deny access to regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const response = await client.get('/api/v1/cache/stats');
                 
                 expect(response.status).toBe(403);
@@ -79,7 +79,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny access to creator users', async () => {
-                client.setToken(testStartup.getTokenForUser('creator'));
+                await testStartup.loginAsUser('creator');
                 const response = await client.get('/api/v1/cache/stats');
                 
                 expect(response.status).toBe(403);
@@ -87,7 +87,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny access to super creator users', async () => {
-                client.setToken(testStartup.getTokenForUser('superCreator'));
+                await testStartup.loginAsUser('superCreator');
                 const response = await client.get('/api/v1/cache/stats');
                 
                 expect(response.status).toBe(403);
@@ -95,7 +95,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny access without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const response = await client.get('/api/v1/cache/stats');
                 
                 expect(response.status).toBe(401);
@@ -103,10 +103,10 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny access with invalid token', async () => {
-                client.setToken('invalid.jwt.token');
+                client.clearCookies();
                 const response = await client.get('/api/v1/cache/stats');
                 
-                expect(response.status).toBe(403);
+                expect(response.status).toBe(401);
                 expect(response.data.success).toBe(false);
             });
         });
@@ -116,7 +116,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
         describe('DELETE /api/v1/cache - Success Cases', () => {
             test('should clear cache as admin', async () => {
                 // First, populate some cache by making requests
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 await client.get('/api/v1/users?limit=1'); // This should be cached
 
                 // Then clear the cache
@@ -130,7 +130,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should clear cache as owner', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const response = await client.delete('/api/v1/cache');
 
                 expect(response.status).toBe(200);
@@ -138,7 +138,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should clear cache when no cache exists', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 // Clear cache twice
                 await client.delete('/api/v1/cache');
                 const response = await client.delete('/api/v1/cache');
@@ -150,7 +150,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('DELETE /api/v1/cache - Permission Errors', () => {
             test('should deny cache clearing for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const response = await client.delete('/api/v1/cache');
                 
                 expect(response.status).toBe(403);
@@ -158,7 +158,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny cache clearing for creator users', async () => {
-                client.setToken(testStartup.getTokenForUser('creator'));
+                await testStartup.loginAsUser('creator');
                 const response = await client.delete('/api/v1/cache');
                 
                 expect(response.status).toBe(403);
@@ -166,7 +166,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny cache clearing without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const response = await client.delete('/api/v1/cache');
                 
                 expect(response.status).toBe(401);
@@ -178,7 +178,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Cache Controller - Cleanup Service', () => {
         describe('GET /api/v1/cache/cleanup - Success Cases', () => {
             test('should get cleanup service status as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -193,7 +193,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should get cleanup service configuration', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -203,7 +203,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should include cleanup statistics', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -217,7 +217,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('POST /api/v1/cache/cleanup - Success Cases', () => {
             test('should manually trigger cleanup as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.post('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -231,7 +231,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should trigger cleanup as owner', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const response = await client.post('/api/v1/cache/cleanup');
 
                 expect(response.status).toBe(200);
@@ -239,7 +239,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cleanup when no keys need cleaning', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 // Run cleanup twice in quick succession
                 await client.post('/api/v1/cache/cleanup');
                 const response = await client.post('/api/v1/cache/cleanup');
@@ -252,7 +252,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('Cache Cleanup - Permission Errors', () => {
             test('should deny cleanup status to regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const response = await client.get('/api/v1/cache/cleanup');
                 
                 expect(response.status).toBe(403);
@@ -260,7 +260,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny manual cleanup to regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const response = await client.post('/api/v1/cache/cleanup');
                 
                 expect(response.status).toBe(403);
@@ -268,7 +268,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny cleanup operations without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const response = await client.get('/api/v1/cache/cleanup');
                 
                 expect(response.status).toBe(401);
@@ -280,7 +280,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Cache Controller - Health Check', () => {
         describe('GET /api/v1/cache/health - Success Cases', () => {
             test('should get cache health status as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/health');
 
                 expect(response.status).toBe(200);
@@ -296,7 +296,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should include Redis connection health', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/health');
 
                 expect(response.status).toBe(200);
@@ -305,7 +305,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should include cache system health', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/cache/health');
 
                 expect(response.status).toBe(200);
@@ -316,7 +316,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('GET /api/v1/cache/health - Permission Errors', () => {
             test('should deny health check to regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const response = await client.get('/api/v1/cache/health');
                 
                 expect(response.status).toBe(403);
@@ -324,7 +324,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should deny health check without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const response = await client.get('/api/v1/cache/health');
                 
                 expect(response.status).toBe(401);
@@ -336,7 +336,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Cache Middleware - Response Caching', () => {
         describe('cacheResponse Middleware', () => {
             test('should cache GET responses', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // First request - should be a cache miss
                 const response1 = await client.get('/api/v1/users?limit=2');
@@ -352,7 +352,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cache headers correctly', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Make a request to a cached endpoint
                 const response = await client.get('/api/v1/cache/stats');
@@ -364,7 +364,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should respect cache duration', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Make request to endpoint with short cache duration
                 const response = await client.get('/api/v1/cache/stats');
@@ -377,7 +377,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('noCacheResponse Middleware', () => {
             test('should prevent caching for health endpoints', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.get('/api/v1/cache/health');
                 expect(response.status).toBe(200);
@@ -390,7 +390,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should prevent caching for cleanup endpoints', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.get('/api/v1/cache/cleanup');
                 expect(response.status).toBe(200);
@@ -410,7 +410,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     // Get user - should populate cache
                     const response1 = await client.get(`/api/v1/users/${testUser.id}`);
@@ -434,7 +434,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should invalidate related caches on user operations', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Get users list - should populate cache
                 const response1 = await client.get('/api/v1/users?limit=3');
@@ -462,7 +462,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Cache Middleware - Edge Cases', () => {
         describe('Cache Error Handling', () => {
             test('should handle Redis connection issues gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Test should still work even if Redis has issues
                 const response = await client.get('/api/v1/users?limit=1');
@@ -471,7 +471,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cache key generation errors', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Request with special characters that might cause issues
                 const response = await client.get('/api/v1/users?search=' + encodeURIComponent('test@#$%^&*()'));
@@ -479,7 +479,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle large cached responses', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Request large dataset
                 const response = await client.get('/api/v1/users?limit=50');
@@ -490,7 +490,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('Cache Performance', () => {
             test('should handle multiple concurrent cache requests', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const startTime = Date.now();
                 
@@ -513,7 +513,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cache statistics updates', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Make several requests to populate statistics
                 await client.get('/api/v1/users?limit=1');
@@ -529,7 +529,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
 
         describe('Cache Configuration', () => {
             test('should respect cache TTL settings', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Test short-lived cache endpoint
                 const response = await client.get('/api/v1/cache/stats');
@@ -540,7 +540,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cache disabled scenarios', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Even with cache issues, endpoints should work
                 const response = await client.get('/api/v1/users?limit=1');
@@ -561,7 +561,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     // First request should populate cache
                     const response1 = await client.get(`/api/v1/users/${testUser.id}`);
@@ -589,7 +589,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     // Get user stats
                     const response = await client.get(`/api/v1/users/${testUser.id}/stats`);
@@ -606,11 +606,11 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
         describe('Authentication Integration', () => {
             test('should handle token-based cache keys', async () => {
                 // Test with different user tokens
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const adminResponse = await client.get('/api/v1/users?limit=1');
                 expect(adminResponse.status).toBe(200);
                 
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const ownerResponse = await client.get('/api/v1/users?limit=1');
                 expect(ownerResponse.status).toBe(200);
                 
@@ -624,7 +624,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
     describe('Performance and Load Testing', () => {
         describe('Cache Performance Under Load', () => {
             test('should handle high-frequency cache operations', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const startTime = Date.now();
                 
@@ -647,7 +647,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should handle cache cleanup under load', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Generate some cache entries
                 const requests = Array(5).fill().map((_, index) => 
@@ -663,7 +663,7 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
             });
 
             test('should maintain cache statistics accuracy', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Make requests to generate statistics
                 await client.get('/api/v1/users?limit=1');

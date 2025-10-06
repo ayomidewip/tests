@@ -115,8 +115,7 @@ class TestStartup {
                 const ownerData = loginResponse.data;
                 this.owner = {
                     ...ownerData.user,
-                    token: ownerData.authentication.accessToken,
-                    refreshToken: ownerData.authentication.refreshToken,
+                    // No longer store tokens since we use cookies
                     credentials: { identifier: ownerUser.username, password: 'TestPass123!' }
                 };
                 console.log('✅ OWNER user created and authenticated successfully');
@@ -124,80 +123,126 @@ class TestStartup {
                 throw new Error('Failed to authenticate OWNER user');
             }
 
-            // Set owner token for creating other users
-            client.setToken(this.owner.token);
-
-            // Create ADMIN user
-            const adminData = {
+            // Owner client is already authenticated with cookies for creating other users
+            // Create ADMIN user directly in database (bypass role approval)
+            const adminUser = new User({
                 firstName: 'Admin',
                 lastName: 'User',
                 username: `admin${timestamp}${randomStr}`,
                 email: `admin${timestamp}${randomStr}@test.com`,
-                password: 'TestPass123!',
-                roles: ['ADMIN']
-            };
-            
-            const adminResponse = await client.post('/api/v1/auth/signup', adminData);
-            this.admin = {
-                ...adminResponse.data.user,
-                token: adminResponse.data.authentication.accessToken,
-                refreshToken: adminResponse.data.authentication.refreshToken,
-                credentials: { identifier: adminData.username, password: adminData.password }
-            };
+                password: await bcrypt.hash('TestPass123!', 12),
+                roles: ['ADMIN'],
+                emailVerified: true,
+                active: true
+            });
+            await adminUser.save();
 
-            // Create SUPER_CREATOR user
-            const superCreatorData = {
+            // Login to get proper authentication
+            const adminLoginResponse = await client.post('/api/v1/auth/login', {
+                identifier: adminUser.username,
+                password: 'TestPass123!'
+            });
+            
+            if (adminLoginResponse?.status === 200 && adminLoginResponse.data?.success) {
+                const adminData = adminLoginResponse.data;
+                this.admin = {
+                    ...adminData.user,
+                    credentials: { identifier: adminUser.username, password: 'TestPass123!' }
+                };
+                console.log('✅ ADMIN user created and authenticated successfully');
+            } else {
+                throw new Error('Failed to authenticate ADMIN user');
+            }
+
+            // Create SUPER_CREATOR user directly in database (bypass role approval)
+            const superCreatorUser = new User({
                 firstName: 'Super',
                 lastName: 'Creator',
                 username: `super${timestamp}${randomStr}`,
                 email: `super${timestamp}${randomStr}@test.com`,
-                password: 'TestPass123!',
-                roles: ['SUPER_CREATOR']
-            };
-            
-            const superCreatorResponse = await client.post('/api/v1/auth/signup', superCreatorData);
-            this.superCreator = {
-                ...superCreatorResponse.data.user,
-                token: superCreatorResponse.data.authentication.accessToken,
-                refreshToken: superCreatorResponse.data.authentication.refreshToken,
-                credentials: { identifier: superCreatorData.username, password: superCreatorData.password }
-            };
+                password: await bcrypt.hash('TestPass123!', 12),
+                roles: ['SUPER_CREATOR'],
+                emailVerified: true,
+                active: true
+            });
+            await superCreatorUser.save();
 
-            // Create CREATOR user
-            const creatorData = {
+            // Login to get proper authentication
+            const superCreatorLoginResponse = await client.post('/api/v1/auth/login', {
+                identifier: superCreatorUser.username,
+                password: 'TestPass123!'
+            });
+            
+            if (superCreatorLoginResponse?.status === 200 && superCreatorLoginResponse.data?.success) {
+                const superCreatorData = superCreatorLoginResponse.data;
+                this.superCreator = {
+                    ...superCreatorData.user,
+                    credentials: { identifier: superCreatorUser.username, password: 'TestPass123!' }
+                };
+                console.log('✅ SUPER_CREATOR user created and authenticated successfully');
+            } else {
+                throw new Error('Failed to authenticate SUPER_CREATOR user');
+            }
+
+            // Create CREATOR user directly in database (bypass role approval)
+            const creatorUser = new User({
                 firstName: 'Creator',
                 lastName: 'User',
                 username: `creator${timestamp}${randomStr}`,
                 email: `creator${timestamp}${randomStr}@test.com`,
-                password: 'TestPass123!',
-                roles: ['CREATOR']
-            };
-            
-            const creatorResponse = await client.post('/api/v1/auth/signup', creatorData);
-            this.creator = {
-                ...creatorResponse.data.user,
-                token: creatorResponse.data.authentication.accessToken,
-                refreshToken: creatorResponse.data.authentication.refreshToken,
-                credentials: { identifier: creatorData.username, password: creatorData.password }
-            };
+                password: await bcrypt.hash('TestPass123!', 12),
+                roles: ['CREATOR'],
+                emailVerified: true,
+                active: true
+            });
+            await creatorUser.save();
 
-            // Create regular USER
-            const userData = {
+            // Login to get proper authentication
+            const creatorLoginResponse = await client.post('/api/v1/auth/login', {
+                identifier: creatorUser.username,
+                password: 'TestPass123!'
+            });
+            
+            if (creatorLoginResponse?.status === 200 && creatorLoginResponse.data?.success) {
+                const creatorData = creatorLoginResponse.data;
+                this.creator = {
+                    ...creatorData.user,
+                    credentials: { identifier: creatorUser.username, password: 'TestPass123!' }
+                };
+                console.log('✅ CREATOR user created and authenticated successfully');
+            } else {
+                throw new Error('Failed to authenticate CREATOR user');
+            }
+
+            // Create regular USER directly in database (consistent approach)
+            const regularUser = new User({
                 firstName: 'Regular',
                 lastName: 'User',
                 username: `user${timestamp}${randomStr}`,
                 email: `user${timestamp}${randomStr}@test.com`,
-                password: 'TestPass123!',
-                roles: ['USER']
-            };
+                password: await bcrypt.hash('TestPass123!', 12),
+                roles: ['USER'],
+                emailVerified: true,
+                active: true
+            });
+            await regularUser.save();
+
+            // Login to get proper authentication
+            const userLoginResponse = await client.post('/api/v1/auth/login', {
+                identifier: regularUser.username,
+                password: 'TestPass123!'
+            });
             
-            const userResponse = await client.post('/api/v1/auth/signup', userData);
-            this.user = {
-                ...userResponse.data.user,
-                token: userResponse.data.authentication.accessToken,
-                refreshToken: userResponse.data.authentication.refreshToken,
-                credentials: { identifier: userData.username, password: userData.password }
-            };
+            if (userLoginResponse?.status === 200 && userLoginResponse.data?.success) {
+                const userData = userLoginResponse.data;
+                this.user = {
+                    ...userData.user,
+                    credentials: { identifier: regularUser.username, password: 'TestPass123!' }
+                };
+                console.log('✅ USER created and authenticated successfully');
+            } else {
+                throw new Error('Failed to authenticate USER');
+            }
 
         } catch (error) {
             console.error('Failed to create test users:', error.message);
@@ -227,28 +272,42 @@ class TestStartup {
     }
 
     /**
-     * Get token for a specific user type
+     * Login as a specific user type (sets cookies for authentication)
      */
-    getTokenForUser(userType) {
+    async loginAsUser(userType) {
         const user = this[userType];
         if (!user) {
             throw new Error(`User type '${userType}' not found`);
         }
-        return user.token;
+        
+        const response = await this.client.post('/api/v1/auth/login', user.credentials);
+        if (response?.status !== 200) {
+            throw new Error(`Failed to login as ${userType}: ${response?.data?.message || 'Unknown error'}`);
+        }
+        
+        return response;
     }
 
-    /**
-     * Set token on the main client
-     */
-    setClientToken(token) {
-        this.client.setToken(token);
-    }
+
+
+
 
     /**
-     * Clear token from the main client (for public endpoints)
+     * Clear token from the main client - now logs out user
      */
     clearClientToken() {
-        this.client.setToken(null);
+        return this.logout();
+    }
+
+    /**
+     * Logout current user (clears authentication cookies)
+     */
+    async logout() {
+        try {
+            await this.client.post('/api/v1/auth/logout');
+        } catch (error) {
+            // Ignore logout errors in tests
+        }
     }
 
     /**
@@ -274,28 +333,28 @@ class TestStartup {
         const timestamp = Date.now().toString().slice(-6);
         const userSuffix = `${this.mutableUserCounter}_${timestamp}`;
         
+        // Only include fields that are allowed in signup
         const userData = {
             firstName: firstName,
             lastName: lastName,
             username: `${prefix}${userSuffix}`,
             email: `${prefix}${userSuffix}@test.com`,
             password: 'MutablePass123!',
-            roles: [role],
-            ...additionalData
+            roles: [role]
         };
 
         try {
-            // Use owner token to create user with any role
-            const client = new ApiClient(this.baseURL);
-            client.setToken(this.owner.token);
+            // Login as owner to create user with any role
+            await this.loginAsUser('owner');
             
-            const response = await client.post('/api/v1/auth/signup', userData);
+            const response = await this.client.post('/api/v1/auth/signup', userData);
             
             const mutableUser = {
                 id: response.data.user.id,
                 ...response.data.user,
-                token: response.data.authentication.accessToken,
-                refreshToken: response.data.authentication.refreshToken,
+                // Include any additional data requested (for test reference)
+                ...additionalData,
+                // No longer store tokens since we use cookies
                 credentials: { 
                     identifier: userData.username, 
                     password: userData.password 
@@ -407,14 +466,14 @@ class TestStartup {
 
         try {
             const client = new ApiClient(this.baseURL);
-            client.setToken(this.admin.token); // Use admin token for deletion
+            // Skip setToken - use admin client authentication instead
+            await this.loginAsUser(this.admin.username, this.admin.password);
             
             await client.delete(`/api/v1/users/${userId}`);
             
             // Remove from stored users
             this.mutableUsers.delete(userId);
             
-            console.log(`✅ Deleted mutable user: ${user.username} (${userId})`);
             return true;
         } catch (error) {
             console.error(`❌ Failed to delete mutable user ${userId}:`, error.message);
@@ -436,8 +495,6 @@ class TestStartup {
             errors: []
         };
 
-        console.log(`🧹 Cleaning up ${results.total} mutable users...`);
-
         const userIds = Array.from(this.mutableUsers.keys());
         
         for (const userId of userIds) {
@@ -454,7 +511,6 @@ class TestStartup {
             }
         }
 
-        console.log(`✅ Mutable user cleanup completed: ${results.deleted} deleted, ${results.failed} failed`);
         return results;
     }
 
@@ -479,34 +535,7 @@ class TestStartup {
      * @param {string} userId - User ID
      * @returns {Object} - Updated user object with new tokens
      */
-    async refreshMutableUserToken(userId) {
-        const user = this.mutableUsers.get(userId);
-        if (!user) {
-            throw new Error(`Mutable user with ID ${userId} not found`);
-        }
 
-        try {
-            const client = new ApiClient(this.baseURL);
-            const response = await client.post('/api/v1/auth/refresh-token', {
-                token: user.refreshToken
-            });
-
-            const updatedUser = {
-                ...user,
-                token: response.data.authentication.accessToken,
-                refreshToken: response.data.authentication.refreshToken,
-                lastTokenRefresh: new Date()
-            };
-
-            this.mutableUsers.set(userId, updatedUser);
-            
-            console.log(`🔄 Refreshed token for mutable user: ${user.username}`);
-            return updatedUser;
-        } catch (error) {
-            console.error(`❌ Failed to refresh token for mutable user ${userId}:`, error.message);
-            throw error;
-        }
-    }
 
     /**
      * Create test data for mutable user testing
@@ -713,17 +742,13 @@ class TestStartup {
      */
     async cleanup() {
         try {
-            // Clean up all mutable users first (they need to be deleted properly via API)
-            if (this.mutableUsers && this.mutableUsers.size > 0) {
-                console.log('🧹 Cleaning up mutable users before shutdown...');
-                await this.cleanupAllMutableUsers();
-            }
-
             // Clean database if flag is enabled - do this IMMEDIATELY while server is still running
             if (process.env.DB_CLEANUP === 'true') {
-                console.log('🗄️ Cleaning database as DB_CLEANUP is enabled...');
-                // Do database cleanup before ANY server shutdown activities
+                // When doing database cleanup, skip API-based user cleanup entirely for efficiency
                 await this.performImmediateDatabaseCleanup();
+            } else if (this.mutableUsers && this.mutableUsers.size > 0) {
+                // Only do API cleanup if not doing database cleanup
+                await this.cleanupAllMutableUsers();
             }
 
             // Gracefully stop cache operations before server shutdown
@@ -993,6 +1018,24 @@ class TestStartup {
             creator: this.creator,
             user: this.user
         };
+    }
+
+    /**
+     * Get authentication cookie string for WebSocket connections
+     * @returns {string} - Cookie string for WebSocket auth
+     */
+    getAuthCookie() {
+        if (this.client && this.client.cookies) {
+            return this.client.cookies.getCookieString(this.baseURL);
+        }
+        return '';
+    }
+
+    /**
+     * Get server instance for direct access
+     */
+    get server() {
+        return this.serverInstance?.server;
     }
 
     /**

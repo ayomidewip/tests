@@ -25,7 +25,7 @@ describe('User Comprehensive Tests', () => {
     describe('User Controller - Get All Users', () => {
         describe('GET /api/v1/users - Success Cases', () => {
             test('should get all users as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users');
 
                 expect(response.status).toBe(200);
@@ -40,7 +40,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should get all users as owner', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const response = await client.get('/api/v1/users');
 
                 expect(response.status).toBe(200);
@@ -49,7 +49,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support pagination parameters', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?page=1&limit=2');
 
                 expect(response.status).toBe(200);
@@ -61,7 +61,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support search and filtering', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?search=admin');
 
                 expect(response.status).toBe(200);
@@ -70,7 +70,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support role filtering', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?role=ADMIN');
 
                 expect(response.status).toBe(200);
@@ -78,7 +78,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support sorting', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?sortBy=createdAt&sortOrder=desc');
 
                 expect(response.status).toBe(200);
@@ -87,7 +87,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should return properly formatted user objects', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?limit=1');
 
                 expect(response.status).toBe(200);
@@ -109,7 +109,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should cache responses appropriately', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // First request
                 const response1 = await client.get('/api/v1/users?limit=3');
@@ -127,7 +127,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users - Permission Tests', () => {
             test('should deny access for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 
                 const response = await client.get('/api/v1/users');
                 expect(response.status).toBe(403);
@@ -135,7 +135,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny access for creators', async () => {
-                client.setToken(testStartup.getTokenForUser('creator'));
+                await testStartup.loginAsUser('creator');
                 
                 const response = await client.get('/api/v1/users');
                 expect(response.status).toBe(403);
@@ -143,7 +143,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny access for super creators', async () => {
-                client.setToken(testStartup.getTokenForUser('superCreator'));
+                await testStartup.loginAsUser('superCreator');
                 
                 const response = await client.get('/api/v1/users');
                 expect(response.status).toBe(403);
@@ -151,7 +151,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny access without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 
                 const response = await client.get('/api/v1/users');
                 expect(response.status).toBe(401);
@@ -161,7 +161,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users - Edge Cases', () => {
             test('should handle invalid pagination parameters gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?page=-1&limit=0');
                 
                 expect(response.status).toBe(200);
@@ -169,7 +169,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle invalid sort parameters gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?sortBy=invalidField');
                 
                 expect(response.status).toBe(200);
@@ -177,7 +177,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle empty search results', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const response = await client.get('/api/v1/users?search=nonexistentuser12345');
                 
                 expect(response.status).toBe(200);
@@ -190,30 +190,30 @@ describe('User Comprehensive Tests', () => {
     describe('User Controller - Get User by ID', () => {
         describe('GET /api/v1/users/:id - Success Cases', () => {
             test('should get user by ID as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
                 
                 const response = await client.get(`/api/v1/users/${userId}`);
 
                 expect(response.status).toBe(200);
-                // Note: Single user endpoint returns raw user data
-                expect(response.data.id).toBe(userId);
-                expect(response.data).not.toHaveProperty('password');
+                expect(response.data.success).toBe(true);
+                expect(response.data.user.id).toBe(userId);
+                expect(response.data.user).not.toHaveProperty('password');
             });
 
             test('should allow users to get their own profile', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
                 
                 const response = await client.get(`/api/v1/users/${userId}`);
 
                 expect(response.status).toBe(200);
-                // Note: Single user endpoint returns raw user data
-                expect(response.data.id).toBe(userId);
+                expect(response.data.success).toBe(true);
+                expect(response.data.user.id).toBe(userId);
             });
 
             test('should cache user profile responses', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
                 
                 const response1 = await client.get(`/api/v1/users/${userId}`);
@@ -226,7 +226,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users/:id - Permission Tests', () => {
             test('should deny access to other users profiles for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const adminId = testStartup.admin.id;
                 
                 const response = await client.get(`/api/v1/users/${adminId}`);
@@ -235,7 +235,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny access without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const userId = testStartup.user.id;
                 
                 const response = await client.get(`/api/v1/users/${userId}`);
@@ -246,7 +246,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users/:id - Error Cases', () => {
             test('should return 400 for invalid user ID format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.get('/api/v1/users/invalid-id');
                 expect(response.status).toBe(400);
@@ -254,7 +254,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should return 404 for non-existent user ID', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const fakeId = new mongoose.Types.ObjectId();
                 
                 const response = await client.get(`/api/v1/users/${fakeId}`);
@@ -267,7 +267,7 @@ describe('User Comprehensive Tests', () => {
     describe('User Controller - Create User', () => {
         describe('POST /api/v1/users - Success Cases', () => {
             test('should create a new user as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'New',
                     lastName: 'User',
@@ -289,7 +289,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should create user with default role when none specified', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'Default',
                     lastName: 'Role',
@@ -305,7 +305,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle role approval for elevated roles', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'Admin',
                     lastName: 'Request',
@@ -324,7 +324,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('POST /api/v1/users - Permission Tests', () => {
             test('should deny user creation for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userData = {
                     firstName: 'Denied',
                     lastName: 'User',
@@ -339,7 +339,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny user creation without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const userData = {
                     firstName: 'No',
                     lastName: 'Auth',
@@ -356,7 +356,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('POST /api/v1/users - Validation Tests', () => {
             test('should reject invalid email format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'Invalid',
                     lastName: 'Email',
@@ -371,7 +371,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should reject weak passwords', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'Weak',
                     lastName: 'Password',
@@ -386,7 +386,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should reject missing required fields', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userData = {
                     firstName: 'Missing',
                     lastName: 'Fields'
@@ -399,7 +399,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should reject duplicate username', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const existingUser = testStartup.user;
                 const userData = {
                     firstName: 'Duplicate',
@@ -427,7 +427,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     const updateData = {
                         firstName: 'Updated',
                         lastName: 'Name'
@@ -456,7 +456,12 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testUser.token);
+                    // Login as the user to get cookies
+                    client.clearCookies();
+                    await client.post('/api/v1/auth/login', {
+                        identifier: testUser.email,
+                        password: 'MutablePass123!'
+                    });
                     
                     const updateData = {
                         firstName: 'Self Updated'
@@ -483,7 +488,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     const updateData = {
                         roles: ['CREATOR']
                     };
@@ -508,7 +513,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     // Get user first (should populate cache)
                     const response1 = await client.get(`/api/v1/users/${testUser.id}`);
@@ -533,7 +538,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('PUT /api/v1/users/:id - Permission Tests', () => {
             test('should deny update for other users profiles by regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const adminId = testStartup.admin.id;
                 const updateData = { firstName: 'Unauthorized' };
 
@@ -543,7 +548,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny update without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const userId = testStartup.user.id;
                 const updateData = { firstName: 'No Auth' };
 
@@ -555,7 +560,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('PUT /api/v1/users/:id - Validation Tests', () => {
             test('should reject invalid email format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
                 const updateData = { email: 'invalid-email' };
 
@@ -565,7 +570,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle non-existent user ID', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const fakeId = new mongoose.Types.ObjectId();
                 const updateData = { firstName: 'Non Existent' };
 
@@ -587,7 +592,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('owner'));
+                    await testStartup.loginAsUser('owner');
                     const response = await client.delete(`/api/v1/users/${testUser.id}`);
 
                     expect(response.status).toBe(200);
@@ -612,7 +617,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('owner'));
+                    await testStartup.loginAsUser('owner');
                     const response = await client.delete(`/api/v1/users/${testUser.id}`);
 
                     expect(response.status).toBe(200);
@@ -637,16 +642,16 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     const response = await client.delete(`/api/v1/users/${testUser.id}`);
                     expect(response.status).toBe(403);
                     expect(response.data.success).toBe(false);
                 } finally {
                     if (testUser) {
-                        // Use owner token to actually delete the user
+                        // Use owner login to actually delete the user
                         const ownerClient = new (require('../utils/api.client'))(testStartup.baseURL);
-                        ownerClient.setToken(testStartup.getTokenForUser('owner'));
+                        await testStartup.loginAsUser('owner', ownerClient);
                         try {
                             await ownerClient.delete(`/api/v1/users/${testUser.id}`);
                         } catch (e) {
@@ -657,7 +662,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny delete for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const adminId = testStartup.admin.id;
 
                 const response = await client.delete(`/api/v1/users/${adminId}`);
@@ -666,7 +671,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny delete without authentication', async () => {
-                client.setToken(null);
+                client.clearCookies();
                 const userId = testStartup.user.id;
 
                 const response = await client.delete(`/api/v1/users/${userId}`);
@@ -677,7 +682,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('DELETE /api/v1/users/:id - Error Cases', () => {
             test('should handle non-existent user ID', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
                 const fakeId = new mongoose.Types.ObjectId();
 
                 const response = await client.delete(`/api/v1/users/${fakeId}`);
@@ -686,7 +691,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle invalid user ID format', async () => {
-                client.setToken(testStartup.getTokenForUser('owner'));
+                await testStartup.loginAsUser('owner');
 
                 const response = await client.delete('/api/v1/users/invalid-id');
                 expect(response.status).toBe(400);
@@ -706,7 +711,12 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testUser.token);
+                    // Login as the user to get cookies
+                    client.clearCookies();
+                    await client.post('/api/v1/auth/login', {
+                        identifier: testUser.email,
+                        password: 'MutablePass123!'
+                    });
                     
                     const passwordData = {
                         currentPassword: 'MutablePass123!',
@@ -734,7 +744,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     const passwordData = {
                         newPassword: 'AdminSet123!'
@@ -754,7 +764,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('PUT /api/v1/users/:id/password - Validation Tests', () => {
             test('should reject weak new passwords', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
                 
                 const passwordData = {
@@ -768,7 +778,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should require current password for regular users', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
                 
                 const passwordData = {
@@ -782,7 +792,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should reject wrong current password', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
                 
                 const passwordData = {
@@ -800,7 +810,7 @@ describe('User Comprehensive Tests', () => {
     describe('User Controller - User Files', () => {
         describe('GET /api/v1/users/:id/files - Success Cases', () => {
             test('should get user files as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/files`);
@@ -812,7 +822,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should allow users to get their own files', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/files`);
@@ -823,7 +833,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support pagination for user files', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/files?page=1&limit=5`);
@@ -835,7 +845,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users/:id/files - Permission Tests', () => {
             test('should deny access to other users files', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const adminId = testStartup.admin.id;
 
                 const response = await client.get(`/api/v1/users/${adminId}/files`);
@@ -848,7 +858,7 @@ describe('User Comprehensive Tests', () => {
     describe('User Controller - User Statistics', () => {
         describe('GET /api/v1/users/:id/stats - Success Cases', () => {
             test('should get user statistics as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/stats`);
@@ -859,7 +869,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should allow users to get their own stats', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/stats`);
@@ -870,7 +880,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should cache user statistics', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response1 = await client.get(`/api/v1/users/${userId}/stats`);
@@ -883,7 +893,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users/:id/stats/fields - Success Cases', () => {
             test('should get user stats fields as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}/stats/fields`);
@@ -896,7 +906,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('GET /api/v1/users/stats/overview - Success Cases', () => {
             test('should get users overview statistics as admin', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 const response = await client.get('/api/v1/users/stats/overview');
 
@@ -906,7 +916,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should support filtering parameters', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 const response = await client.get('/api/v1/users/stats/overview');
 
@@ -919,7 +929,7 @@ describe('User Comprehensive Tests', () => {
     describe('User Middleware Functions', () => {
         describe('checkUserExists middleware', () => {
             test('should pass for valid user ID', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}`);
@@ -927,7 +937,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should return 400 for invalid user ID format', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
 
                 const response = await client.get('/api/v1/users/invalid-id');
                 expect(response.status).toBe(400);
@@ -935,7 +945,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should return 404 for non-existent user', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const fakeId = new mongoose.Types.ObjectId();
 
                 const response = await client.get(`/api/v1/users/${fakeId}`);
@@ -946,7 +956,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('checkResourceOwnership middleware', () => {
             test('should allow admins to access any user', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}`);
@@ -954,7 +964,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should allow users to access their own profile', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const userId = testStartup.user.id;
 
                 const response = await client.get(`/api/v1/users/${userId}`);
@@ -962,7 +972,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should deny regular users access to others profiles', async () => {
-                client.setToken(testStartup.getTokenForUser('user'));
+                await testStartup.loginAsUser('user');
                 const adminId = testStartup.admin.id;
 
                 const response = await client.get(`/api/v1/users/${adminId}`);
@@ -981,7 +991,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('owner'));
+                    await testStartup.loginAsUser('owner');
                     const response = await client.delete(`/api/v1/users/${testUser.id}`);
 
                     expect(response.status).toBe(200);
@@ -1002,7 +1012,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
 
                     const response = await client.delete(`/api/v1/users/${testUser.id}`);
                     expect(response.status).toBe(403);
@@ -1019,7 +1029,7 @@ describe('User Comprehensive Tests', () => {
     describe('Route Integration and Edge Cases', () => {
         describe('Caching Behavior', () => {
             test('should properly cache and invalidate user list', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 // Get users list - should populate cache
                 const response1 = await client.get('/api/v1/users?limit=2');
@@ -1043,7 +1053,7 @@ describe('User Comprehensive Tests', () => {
                 });
 
                 try {
-                    client.setToken(testStartup.getTokenForUser('admin'));
+                    await testStartup.loginAsUser('admin');
                     
                     // Get user - should populate cache
                     const response1 = await client.get(`/api/v1/users/${testUser.id}`);
@@ -1068,14 +1078,14 @@ describe('User Comprehensive Tests', () => {
 
         describe('Error Handling', () => {
             test('should handle malformed JSON gracefully', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const response = await client.post('/api/v1/users', 'invalid-json');
                 expect(response.status).toBe(400);
             });
 
             test('should handle missing Content-Type header', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 const userId = testStartup.user.id;
                 
                 const response = await client.get(`/api/v1/users/${userId}`);
@@ -1085,7 +1095,7 @@ describe('User Comprehensive Tests', () => {
 
         describe('Performance and Concurrency', () => {
             test('should handle concurrent user requests', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const promises = Array(5).fill().map(() => 
                     client.get('/api/v1/users?limit=1')
@@ -1100,7 +1110,7 @@ describe('User Comprehensive Tests', () => {
             });
 
             test('should handle mixed concurrent operations', async () => {
-                client.setToken(testStartup.getTokenForUser('admin'));
+                await testStartup.loginAsUser('admin');
                 
                 const promises = [
                     client.get('/api/v1/users?limit=2'),
