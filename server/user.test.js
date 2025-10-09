@@ -3,19 +3,20 @@
  * Tests all user endpoints, middleware functions, and edge cases
  */
 
-const TestStartup = require('../utils/test.startup');
-const mongoose = require('mongoose');
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import mongoose from 'mongoose';
+import TestStartup from '../utils/test.startup.js';
+import ApiClient from '../utils/api.client.js';
 
 describe('User Comprehensive Tests', () => {
     let testStartup;
     let client;
 
     beforeAll(async () => {
-        testStartup = new TestStartup();
+        testStartup = new TestStartup('user');
         await testStartup.initialize();
         client = testStartup.getClient();
-
-        console.log('User test environment initialized');
+        console.log('User tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
     }, 60000);
 
     afterAll(async () => {
@@ -650,7 +651,7 @@ describe('User Comprehensive Tests', () => {
                 } finally {
                     if (testUser) {
                         // Use owner login to actually delete the user
-                        const ownerClient = new (require('../utils/api.client'))(testStartup.baseURL);
+                        const ownerClient = new ApiClient(testStartup.baseURL);
                         await testStartup.loginAsUser('owner', ownerClient);
                         try {
                             await ownerClient.delete(`/api/v1/users/${testUser.id}`);

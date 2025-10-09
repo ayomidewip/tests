@@ -3,20 +3,20 @@
  * Tests all auth controller endpoints, middleware, and edge cases
  */
 
-const TestStartup = require('../utils/test.startup');
-const mongoose = require('mongoose');
-const jwt = require('jsonwebtoken');
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
+import TestStartup from '../utils/test.startup.js';
 
 describe('Authentication Layer - Comprehensive Tests', () => {
     let testStartup;
     let client;
 
     beforeAll(async () => {
-        testStartup = new TestStartup();
+        testStartup = new TestStartup('auth');
         await testStartup.initialize();
         client = testStartup.getClient();
-
-        console.log('Auth test environment initialized');
+        console.log('Auth tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
     }, 60000);
 
     afterAll(async () => {

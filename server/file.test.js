@@ -4,8 +4,9 @@
  * Ensures file operations work over the REST interface after removing Socket.IO.
  */
 
-const TestStartup = require('../utils/test.startup');
-const FormData = require('form-data');
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import FormData from 'form-data';
+import TestStartup from '../utils/test.startup.js';
 
 const encodePath = (filePath) => encodeURIComponent(filePath);
 
@@ -20,10 +21,11 @@ describe('File Routes - HTTP API', () => {
     let copiedFilePath;
 
     beforeAll(async () => {
-        testStartup = new TestStartup();
+        testStartup = new TestStartup('file');
         await testStartup.initialize();
         client = testStartup.getClient();
         regularUser = testStartup.user;
+        console.log('File tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
 
         await testStartup.loginAsUser('creator');
 

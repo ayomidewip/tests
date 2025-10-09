@@ -1,25 +1,35 @@
 # App Base Test Suite
 
-Test suite for the App Base server using `TestStartup` for unified resource management.
+Test suite for the App Base server using `TestStartup` for unified resource management. Built with **Vitest** for fast, parallel test execution.
 
 ## Running Tests
 
 ```bash
-# All tests
+# All tests (runs in parallel)
 npm test
 
-# Specific test files
-npm test server/app.test.js      # Health endpoints, logs
-npm test server/auth.test.js     # Authentication & signup
-npm test server/user.test.js     # User management
-npm test server/file.test.js     # File operations
-npm test server/cache.test.js    # Cache management
+# Watch mode (reruns tests on file changes)
+npm run test:watch
+
+# Tests with UI (browser-based test viewer)
+npm run test:ui
+
+# Run specific test files
+npm run test:app          # Health endpoints, logs
+npm run test:auth         # Authentication & signup
+npm run test:user         # User management
+npm run test:file         # File operations
+npm run test:cache        # Cache management
+
+# Coverage report
+npm run test:coverage
 ```
 
 ## Basic Usage
 
 ```javascript
-const TestStartup = require('../utils/test.startup');
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import TestStartup from '../utils/test.startup.js';
 
 describe('My Test Suite', () => {
     let testStartup;

@@ -2,8 +2,8 @@
  * Simple API Client for Tests - Updated for Cookie-Based Authentication
  */
 
-const axios = require('axios');
-const { CookieJar } = require('tough-cookie');
+import axios from 'axios';
+import { CookieJar } from 'tough-cookie';
 
 class ApiClient {
     constructor(baseURL, token = null) {
@@ -140,4 +140,4 @@ class ApiClient {
     }
 }
 
-module.exports = ApiClient;
+export default ApiClient;

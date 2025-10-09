@@ -3,18 +3,18 @@
  * Tests all cache endpoints, middleware functions, and edge cases
  */
 
-const TestStartup = require('../utils/test.startup');
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import TestStartup from '../utils/test.startup.js';
 
 describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () => {
     let testStartup;
     let client;
 
     beforeAll(async () => {
-        testStartup = new TestStartup();
+        testStartup = new TestStartup('cache');
         await testStartup.initialize();
         client = testStartup.getClient();
-
-        console.log('Cache test environment initialized');
+        console.log('Cache tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
     }, 60000);
 
     afterAll(async () => {

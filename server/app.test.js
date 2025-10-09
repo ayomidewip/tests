@@ -3,22 +3,19 @@
  * Tests all endpoints in app.routes.js and cache.routes.js with extensive edge cases
  */
 
-const TestStartup = require('../utils/test.startup');
-const mongoose = require('mongoose');
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import mongoose from 'mongoose';
+import TestStartup from '../utils/test.startup.js';
 
 describe('App Controller and Routes - Comprehensive Tests', () => {
     let testStartup;
     let client; // Single reusable client
 
     beforeAll(async () => {
-        testStartup = new TestStartup();
+        testStartup = new TestStartup('app');
         await testStartup.initialize();
-
-        // Get the single reusable client
         client = testStartup.getClient();
-
-        console.log('Test environment initialized with server on port:', testStartup.port);
-        console.log('Single reusable client created and ready for testing');
+        console.log('App tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
     }, 60000);
 
     afterAll(async () => {
