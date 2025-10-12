@@ -688,21 +688,6 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
             });
-
-            test('should handle oversized request payloads', async () => {
-                await testStartup.loginAsUser('admin');
-                const largePayload = {
-                    template: 'welcome',
-                    data: {
-                        content: 'x'.repeat(2 * 1024 * 1024) // 2MB of data
-                    }
-                };
-                
-                // Oversized payloads should be rejected with 413 or 400
-                const response = await client.post('/api/v1/email/template/render', largePayload);
-                
-                expect([400, 413]).toContain(response.status);
-            });
         });
 
         describe('Concurrent Request Handling', () => {

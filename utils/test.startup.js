@@ -361,8 +361,8 @@ class TestStartup {
 
         try {
             const client = new ApiClient(this.baseURL);
-            // Skip setToken - use admin client authentication instead
-            await this.loginAsUser(this.admin.username, this.admin.password);
+            // Login as admin to delete the user
+            await this.loginAsUser('admin');
             
             await client.delete(`/api/v1/users/${userId}`);
             
