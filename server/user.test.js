@@ -855,6 +855,179 @@ describe('User Comprehensive Tests', () => {
                 expect(response.data.success).toBe(true);
                 expect(response.data.data).toBeDefined(); // Note: likely "data" not "fields"
             });
+
+            test('should return only the requested fields', async () => {
+                await testStartup.loginAsUser('admin');
+                const response = await client.get(
+                    `/api/v1/users/${testStartup.user.id}/stats/fields?fields=user.username,user.roles`
+                );
+
+                expect(response.status).toBe(200);
+                expect(response.data.data.user).toBeDefined();
+                expect(response.data.data.user.username).toBeDefined();
+            });
+
+            test('should resolve activity and file fields', async () => {
+                await testStartup.loginAsUser('admin');
+                const response = await client.get(
+                    `/api/v1/users/${testStartup.user.id}/stats/fields?fields=activity.lastLogin,activity.loginHistory,files.totalFiles`
+                );
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+            });
+
+            test('should mark unknown fields rather than failing', async () => {
+                await testStartup.loginAsUser('admin');
+                const response = await client.get(
+                    `/api/v1/users/${testStartup.user.id}/stats/fields?fields=nonsense.field`
+                );
+
+                expect(response.status).toBe(200);
+                expect(response.data.data.nonsense.field.error).toBeDefined();
+            });
+
+            test('should deny another user stats fields', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.get(
+                    `/api/v1/users/${testStartup.creator.id}/stats/fields?fields=security.lastPasswordChange`
+                );
+
+                expect(response.status).toBe(403);
+                expect(response.data.success).toBe(false);
+            });
+
+            test('should deny another user stats', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.get(`/api/v1/users/${testStartup.creator.id}/stats`);
+
+                expect(response.status).toBe(403);
+                expect(response.data.success).toBe(false);
+            });
+
+            test('should allow a user their own stats', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.get(`/api/v1/users/${testStartup.user.id}/stats`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+                expect(response.data.stats).toBeDefined();
+            });
+        });
+
+        // The route guards these handlers with checkResourceOwnership, so an
+        // unauthorised request never reaches them. The handlers carry their own
+        // permission checks as a second line of defence; these tests invoke them
+        // directly to prove those checks actually deny, since no route can.
+        describe('Handler-level permission guards', () => {
+            let userController;
+
+            beforeAll(async () => {
+                const mod = await import('../../server/controllers/user.controller.js');
+                userController = mod.default ?? mod.userController;
+            });
+
+            const buildRes = () => {
+                const res = {statusCode: null, body: null};
+                res.status = (code) => {
+                    res.statusCode = code;
+                    return res;
+                };
+                res.json = (payload) => {
+                    res.body = payload;
+                    return res;
+                };
+                return res;
+            };
+
+            test('should restrict a stranger to public fields only', async () => {
+                const res = buildRes();
+                const req = {
+                    params: {id: testStartup.creator.id},
+                    user: {id: testStartup.user.id, roles: ['USER']},
+                    query: {fields: 'user.username,user.roles'}
+                };
+
+                await userController.getUserStatsFields(req, res, (err) => {
+                    throw err;
+                });
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.data.user.username).toBeDefined();
+            });
+
+            test('should deny a stranger access to security fields', async () => {
+                const res = buildRes();
+                const req = {
+                    params: {id: testStartup.creator.id},
+                    user: {id: testStartup.user.id, roles: ['USER']},
+                    query: {fields: 'security.lastPasswordChange,security.twoFactorEnabled'}
+                };
+
+                await userController.getUserStatsFields(req, res, (err) => {
+                    throw err;
+                });
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.data.security.lastPasswordChange.error).toMatch(/denied/i);
+                expect(res.body.data.security.twoFactorEnabled.error).toMatch(/denied/i);
+            });
+
+            test('should deny a stranger access to activity fields', async () => {
+                const res = buildRes();
+                const req = {
+                    params: {id: testStartup.creator.id},
+                    user: {id: testStartup.user.id, roles: ['USER']},
+                    query: {fields: 'activity.loginHistory'}
+                };
+
+                await userController.getUserStatsFields(req, res, (err) => {
+                    throw err;
+                });
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.data.activity.loginHistory.error).toMatch(/denied/i);
+            });
+
+            test('should give an admin the security fields it denies a stranger', async () => {
+                const res = buildRes();
+                const req = {
+                    params: {id: testStartup.creator.id},
+                    user: {id: testStartup.admin.id, roles: ['ADMIN']},
+                    query: {fields: 'security.twoFactorEnabled'}
+                };
+
+                await userController.getUserStatsFields(req, res, (err) => {
+                    throw err;
+                });
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.data.security.twoFactorEnabled).not.toHaveProperty('error');
+            });
+
+            test('should give a user their own security fields', async () => {
+                const res = buildRes();
+                const req = {
+                    params: {id: testStartup.user.id},
+                    user: {id: testStartup.user.id, roles: ['USER']},
+                    query: {fields: 'security.twoFactorEnabled'}
+                };
+
+                await userController.getUserStatsFields(req, res, (err) => {
+                    throw err;
+                });
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.data.security.twoFactorEnabled).not.toHaveProperty('error');
+            });
+
+            test('should return 404 for stats on a non-existent user', async () => {
+                await testStartup.loginAsUser('admin');
+                const response = await client.get('/api/v1/users/000000000000000000000000/stats');
+
+                expect(response.status).toBe(404);
+                expect(response.data.success).toBe(false);
+            });
         });
 
         describe('GET /api/v1/users/stats/overview - Success Cases', () => {
@@ -880,6 +1053,128 @@ describe('User Comprehensive Tests', () => {
     });
 
     describe('User Middleware Functions', () => {
+        // Exercised directly: pure helpers with no request lifecycle to drive
+        describe('Pure helpers', () => {
+            let parseTimePeriod;
+            let generateFallbackDeviceId;
+            let normalizeRoleField;
+            let removeInactiveDevices;
+
+            beforeAll(async () => {
+                const mod = await import('../../server/middleware/user.middleware.js');
+                parseTimePeriod = mod.parseTimePeriod;
+                generateFallbackDeviceId = mod.generateFallbackDeviceId;
+                normalizeRoleField = mod.normalizeRoleField;
+                removeInactiveDevices = mod.removeInactiveDevices;
+            });
+
+            describe('parseTimePeriod', () => {
+                test('should return a null start date when no period is given', () => {
+                    expect(parseTimePeriod(undefined).startDate).toBeNull();
+                    expect(parseTimePeriod('').startDate).toBeNull();
+                });
+
+                test('should subtract hours, days, weeks, months and years', () => {
+                    const units = [
+                        ['6h', 6 * 60 * 60 * 1000],
+                        ['3d', 3 * 24 * 60 * 60 * 1000],
+                        ['2w', 14 * 24 * 60 * 60 * 1000]
+                    ];
+
+                    for (const [period, approxMs] of units) {
+                        const {startDate} = parseTimePeriod(period);
+                        expect(startDate, `${period} should produce a date`).toBeInstanceOf(Date);
+                        const delta = Date.now() - startDate.getTime();
+                        // Allow a wide margin: the implementation uses calendar arithmetic
+                        expect(delta).toBeGreaterThan(approxMs * 0.9);
+                        expect(delta).toBeLessThan(approxMs * 1.1);
+                    }
+                });
+
+                test('should handle month and year units', () => {
+                    expect(parseTimePeriod('1m').startDate).toBeInstanceOf(Date);
+                    expect(parseTimePeriod('1y').startDate).toBeInstanceOf(Date);
+                });
+
+                test('should return null for an unrecognised unit', () => {
+                    expect(parseTimePeriod('5x').startDate).toBeNull();
+                });
+            });
+
+            describe('generateFallbackDeviceId', () => {
+                test('should produce a stable hash for the same request shape', () => {
+                    const req = {headers: {'user-agent': 'Test-Agent/1.0'}, ip: '127.0.0.1'};
+                    const id = generateFallbackDeviceId(req);
+
+                    expect(typeof id).toBe('string');
+                    expect(id.length).toBeGreaterThan(0);
+                });
+
+                test('should tolerate a request with no user-agent', () => {
+                    const req = {headers: {}, ip: '127.0.0.1'};
+                    expect(() => generateFallbackDeviceId(req)).not.toThrow();
+                });
+            });
+
+            describe('normalizeRoleField', () => {
+                const runMiddleware = (body) => {
+                    const req = {body};
+                    let called = false;
+                    normalizeRoleField(req, {}, () => {
+                        called = true;
+                    });
+                    return {req, called};
+                };
+
+                test('should convert a singular role into a roles array', () => {
+                    const {req, called} = runMiddleware({role: 'ADMIN'});
+
+                    expect(called).toBe(true);
+                    expect(req.body.roles).toEqual(['ADMIN']);
+                    expect(req.body.role).toBeUndefined();
+                });
+
+                test('should keep an existing roles array untouched', () => {
+                    const {req} = runMiddleware({roles: ['USER', 'CREATOR']});
+                    expect(req.body.roles).toEqual(['USER', 'CREATOR']);
+                });
+
+                test('should accept an array supplied under role', () => {
+                    const {req} = runMiddleware({role: ['ADMIN', 'USER']});
+                    expect(req.body.roles).toEqual(['ADMIN', 'USER']);
+                });
+
+                test('should pass through a body with neither field', () => {
+                    const {req, called} = runMiddleware({firstName: 'Nobody'});
+                    expect(called).toBe(true);
+                    expect(req.body.roles).toBeUndefined();
+                });
+            });
+
+            describe('removeInactiveDevices', () => {
+                test('should return the user unchanged when there are no devices', async () => {
+                    const user = {id: 'x'};
+                    expect(await removeInactiveDevices(user)).toBe(user);
+                });
+
+                test('should return the user unchanged when knownDevices is not an array', async () => {
+                    const user = {id: 'x', knownDevices: 'not-an-array'};
+                    expect(await removeInactiveDevices(user)).toBe(user);
+                });
+
+                test('should keep devices seen within the window', async () => {
+                    const user = {
+                        id: 'x',
+                        knownDevices: [{deviceId: 'a', lastSeenAt: new Date()}],
+                        save: async () => {}
+                    };
+
+                    await removeInactiveDevices(user, 90);
+                    expect(user.knownDevices).toHaveLength(1);
+                });
+            });
+        });
+
         describe('checkUserExists middleware', () => {
             test('should pass for valid user ID', async () => {
                 await testStartup.loginAsUser('admin');
@@ -1082,15 +1377,15 @@ describe('User Comprehensive Tests', () => {
     });
 
     // =========================================================================
-    // FOLLOW SYSTEM TESTS
+    // CONNECTION SYSTEM TESTS
     // =========================================================================
-    describe('User Controller - Follow System', () => {
+    describe('User Controller - Connection System', () => {
         let userA, userB, userC;
 
         beforeAll(async () => {
-            userA = await testStartup.createMutableUser({ role: 'USER', firstName: 'Alice', lastName: 'Follow', prefix: 'follow_a' });
-            userB = await testStartup.createMutableUser({ role: 'USER', firstName: 'Bob', lastName: 'Follow', prefix: 'follow_b' });
-            userC = await testStartup.createMutableUser({ role: 'USER', firstName: 'Carol', lastName: 'Follow', prefix: 'follow_c' });
+            userA = await testStartup.createMutableUser({ role: 'USER', firstName: 'Alice', lastName: 'Connect', prefix: 'connect_a' });
+            userB = await testStartup.createMutableUser({ role: 'USER', firstName: 'Bob', lastName: 'Connect', prefix: 'connect_b' });
+            userC = await testStartup.createMutableUser({ role: 'USER', firstName: 'Carol', lastName: 'Connect', prefix: 'connect_c' });
         }, 30000);
 
         const loginAs = async (mutableUser) => {
@@ -1099,39 +1394,40 @@ describe('User Comprehensive Tests', () => {
             return response;
         };
 
-        describe('POST /api/v1/users/:id/follow - Follow a User', () => {
-            it('should follow another user successfully', async () => {
+        describe('POST /api/v1/users/:id/connect - Send Connection Request', () => {
+            it('should send a connection request successfully', async () => {
                 await loginAs(userA);
-                const response = await client.post(`/api/v1/users/${userB.id}/follow`);
+                const response = await client.post(`/api/v1/users/${userB.id}/connect`);
 
                 expect(response.status).toBe(200);
                 expect(response.data).toEqual({
                     success: true,
-                    message: 'User followed successfully'
+                    message: 'Connection request sent'
                 });
             });
 
-            it('should be idempotent (follow again returns 200)', async () => {
+            it('should reject a duplicate request to the same user', async () => {
                 await loginAs(userA);
-                const response = await client.post(`/api/v1/users/${userB.id}/follow`);
-
-                expect(response.status).toBe(200);
-                expect(response.data.success).toBe(true);
-            });
-
-            it('should not allow following yourself', async () => {
-                await loginAs(userA);
-                const response = await client.post(`/api/v1/users/${userA.id}/follow`);
+                const response = await client.post(`/api/v1/users/${userB.id}/connect`);
 
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
-                expect(response.data.message).toMatch(/cannot follow yourself/i);
+                expect(response.data.message).toMatch(/already sent/i);
+            });
+
+            it('should not allow connecting with yourself', async () => {
+                await loginAs(userA);
+                const response = await client.post(`/api/v1/users/${userA.id}/connect`);
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+                expect(response.data.message).toMatch(/cannot connect with yourself/i);
             });
 
             it('should return 404 for non-existent user', async () => {
                 await loginAs(userA);
                 const fakeId = '000000000000000000000000';
-                const response = await client.post(`/api/v1/users/${fakeId}/follow`);
+                const response = await client.post(`/api/v1/users/${fakeId}/connect`);
 
                 expect(response.status).toBe(404);
                 expect(response.data.success).toBe(false);
@@ -1139,17 +1435,17 @@ describe('User Comprehensive Tests', () => {
 
             it('should require authentication', async () => {
                 client.clearCookies();
-                const response = await client.post(`/api/v1/users/${userB.id}/follow`);
+                const response = await client.post(`/api/v1/users/${userB.id}/connect`);
 
                 expect(response.status).toBe(401);
                 expect(response.data.success).toBe(false);
             });
         });
 
-        describe('GET /api/v1/users/:id/following - Get Following', () => {
-            it('should return list of users being followed', async () => {
+        describe('GET /api/v1/users/connections/sent - Sent Requests', () => {
+            it('should list outgoing pending requests', async () => {
                 await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userA.id}/following`);
+                const response = await client.get('/api/v1/users/connections/sent');
 
                 expect(response.status).toBe(200);
                 expect(response.data.success).toBe(true);
@@ -1166,28 +1462,19 @@ describe('User Comprehensive Tests', () => {
 
             it('should return populated user objects', async () => {
                 await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userA.id}/following`);
+                const response = await client.get('/api/v1/users/connections/sent');
 
                 if (response.data.data.length > 0) {
-                    const followed = response.data.data[0];
-                    expect(followed).toHaveProperty('firstName');
-                    expect(followed).toHaveProperty('lastName');
-                    expect(followed).toHaveProperty('username');
+                    const recipient = response.data.data[0];
+                    expect(recipient).toHaveProperty('firstName');
+                    expect(recipient).toHaveProperty('lastName');
+                    expect(recipient).toHaveProperty('username');
                 }
             });
 
-            it('should support pagination', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userA.id}/following?page=1&limit=1`);
-
-                expect(response.status).toBe(200);
-                expect(response.data.pagination.page).toBe(1);
-                expect(response.data.pagination.limit).toBe(1);
-            });
-
-            it('should return empty for user with no follows', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userC.id}/following`);
+            it('should return empty for a user with no sent requests', async () => {
+                await loginAs(userC);
+                const response = await client.get('/api/v1/users/connections/sent');
 
                 expect(response.status).toBe(200);
                 expect(response.data.data).toEqual([]);
@@ -1195,111 +1482,117 @@ describe('User Comprehensive Tests', () => {
             });
         });
 
-        describe('GET /api/v1/users/:id/followers - Get Followers', () => {
-            it('should return followers of a user', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userB.id}/followers`);
+        describe('GET /api/v1/users/connections/pending - Pending Requests', () => {
+            it('should list incoming pending requests', async () => {
+                await loginAs(userB);
+                const response = await client.get('/api/v1/users/connections/pending');
 
                 expect(response.status).toBe(200);
                 expect(response.data.success).toBe(true);
                 expect(Array.isArray(response.data.data)).toBe(true);
-                expect(response.data.pagination).toBeDefined();
 
                 const ids = response.data.data.map(u => u._id || u.id);
                 expect(ids).toContain(userA.id);
             });
 
-            it('should return empty for user with no followers', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userC.id}/followers`);
+            it('should support pagination', async () => {
+                await loginAs(userB);
+                const response = await client.get('/api/v1/users/connections/pending?page=1&limit=1');
+
+                expect(response.status).toBe(200);
+                expect(response.data.pagination.page).toBe(1);
+                expect(response.data.pagination.limit).toBe(1);
+            });
+
+            it('should return empty for a user with no incoming requests', async () => {
+                await loginAs(userC);
+                const response = await client.get('/api/v1/users/connections/pending');
 
                 expect(response.status).toBe(200);
                 expect(response.data.data).toEqual([]);
             });
         });
 
-        describe('GET /api/v1/users/:id/follow-counts - Get Follow Counts', () => {
-            it('should return follow counts', async () => {
+        describe('GET /api/v1/users/:id/connection-status - Pending State', () => {
+            it('should report pending_sent for the requester', async () => {
                 await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userA.id}/follow-counts`);
+                const response = await client.get(`/api/v1/users/${userB.id}/connection-status`);
 
                 expect(response.status).toBe(200);
                 expect(response.data).toEqual({
                     success: true,
                     data: {
-                        followingCount: expect.any(Number),
-                        followerCount: expect.any(Number)
-                    }
-                });
-                expect(response.data.data.followingCount).toBeGreaterThanOrEqual(1);
-            });
-
-            it('should return zero counts for new user', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userC.id}/follow-counts`);
-
-                expect(response.status).toBe(200);
-                expect(response.data.data.followingCount).toBe(0);
-                expect(response.data.data.followerCount).toBe(0);
-            });
-        });
-
-        describe('GET /api/v1/users/:id/follow-status - Check Follow Status', () => {
-            it('should report isFollowing=true when current user follows target', async () => {
-                await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userB.id}/follow-status`);
-
-                expect(response.status).toBe(200);
-                expect(response.data).toEqual({
-                    success: true,
-                    data: {
-                        isFollowing: true,
-                        isFollowedBy: false,
-                        isMutual: false
+                        status: 'pending_sent',
+                        isConnected: false
                     }
                 });
             });
 
-            it('should report isFollowedBy=true when target follows current user', async () => {
+            it('should report pending_received for the recipient', async () => {
                 await loginAs(userB);
-                const response = await client.get(`/api/v1/users/${userA.id}/follow-status`);
+                const response = await client.get(`/api/v1/users/${userA.id}/connection-status`);
 
                 expect(response.status).toBe(200);
-                expect(response.data.data.isFollowing).toBe(false);
-                expect(response.data.data.isFollowedBy).toBe(true);
+                expect(response.data.data.status).toBe('pending_received');
+                expect(response.data.data.isConnected).toBe(false);
             });
 
-            it('should detect mutual follows', async () => {
-                await loginAs(userB);
-                await client.post(`/api/v1/users/${userA.id}/follow`);
-
-                const response = await client.get(`/api/v1/users/${userA.id}/follow-status`);
-
-                expect(response.status).toBe(200);
-                expect(response.data.data).toEqual({
-                    isFollowing: true,
-                    isFollowedBy: true,
-                    isMutual: true
-                });
-            });
-
-            it('should report all false for unrelated users', async () => {
+            it('should report none for unrelated users', async () => {
                 await loginAs(userC);
-                const response = await client.get(`/api/v1/users/${userA.id}/follow-status`);
+                const response = await client.get(`/api/v1/users/${userA.id}/connection-status`);
 
                 expect(response.status).toBe(200);
                 expect(response.data.data).toEqual({
-                    isFollowing: false,
-                    isFollowedBy: false,
-                    isMutual: false
+                    status: 'none',
+                    isConnected: false
                 });
             });
         });
 
-        describe('GET /api/v1/users/mutuals - Get Mutuals', () => {
-            it('should return mutual follows for the current user', async () => {
+        describe('PUT /api/v1/users/:id/connect - Respond to Request', () => {
+            it('should reject an invalid action', async () => {
+                await loginAs(userB);
+                const response = await client.put(`/api/v1/users/${userA.id}/connect`, { action: 'maybe' });
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+                expect(response.data.message).toMatch(/accept.*reject/i);
+            });
+
+            it('should return 404 when there is no pending request', async () => {
+                await loginAs(userC);
+                const response = await client.put(`/api/v1/users/${userA.id}/connect`, { action: 'accept' });
+
+                expect(response.status).toBe(404);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should accept a pending request', async () => {
+                await loginAs(userB);
+                const response = await client.put(`/api/v1/users/${userA.id}/connect`, { action: 'accept' });
+
+                expect(response.status).toBe(200);
+                expect(response.data).toEqual({
+                    success: true,
+                    message: 'Connection request accepted'
+                });
+            });
+
+            it('should report connected for both users after acceptance', async () => {
                 await loginAs(userA);
-                const response = await client.get('/api/v1/users/mutuals');
+                const fromA = await client.get(`/api/v1/users/${userB.id}/connection-status`);
+                expect(fromA.data.data).toEqual({ status: 'connected', isConnected: true });
+
+                await loginAs(userB);
+                const fromB = await client.get(`/api/v1/users/${userA.id}/connection-status`);
+                expect(fromB.data.data).toEqual({ status: 'connected', isConnected: true });
+            });
+        });
+
+        describe('GET /api/v1/users/:id/connections - Get Connections', () => {
+            it('should return accepted connections for a user', async () => {
+                await loginAs(userA);
+                const response = await client.get(`/api/v1/users/${userA.id}/connections`);
 
                 expect(response.status).toBe(200);
                 expect(response.data.success).toBe(true);
@@ -1310,58 +1603,164 @@ describe('User Comprehensive Tests', () => {
                 expect(ids).toContain(userB.id);
             });
 
-            it('should return empty for user with no mutuals', async () => {
-                await loginAs(userC);
-                const response = await client.get('/api/v1/users/mutuals');
+            it('should return the other party from the connection', async () => {
+                await loginAs(userB);
+                const response = await client.get(`/api/v1/users/${userB.id}/connections`);
 
                 expect(response.status).toBe(200);
-                expect(response.data.data).toEqual([]);
+                const ids = response.data.data.map(u => u._id || u.id);
+                expect(ids).toContain(userA.id);
+                expect(ids).not.toContain(userB.id);
             });
 
             it('should support pagination', async () => {
                 await loginAs(userA);
-                const response = await client.get('/api/v1/users/mutuals?page=1&limit=10');
+                const response = await client.get(`/api/v1/users/${userA.id}/connections?page=1&limit=1`);
 
                 expect(response.status).toBe(200);
                 expect(response.data.pagination.page).toBe(1);
-                expect(response.data.pagination.limit).toBe(10);
+                expect(response.data.pagination.limit).toBe(1);
+            });
+
+            it('should return empty for a user with no connections', async () => {
+                await loginAs(userC);
+                const response = await client.get(`/api/v1/users/${userC.id}/connections`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.data).toEqual([]);
+                expect(response.data.pagination.total).toBe(0);
             });
         });
 
-        describe('DELETE /api/v1/users/:id/follow - Unfollow a User', () => {
-            it('should unfollow a user successfully', async () => {
+        describe('GET /api/v1/users/:id/connection-counts - Connection Counts', () => {
+            it('should return connection counts', async () => {
                 await loginAs(userA);
-                const response = await client.delete(`/api/v1/users/${userB.id}/follow`);
+                const response = await client.get(`/api/v1/users/${userA.id}/connection-counts`);
 
                 expect(response.status).toBe(200);
                 expect(response.data).toEqual({
                     success: true,
-                    message: 'User unfollowed successfully'
+                    data: {
+                        connectionCount: expect.any(Number),
+                        pendingCount: expect.any(Number)
+                    }
+                });
+                expect(response.data.data.connectionCount).toBeGreaterThanOrEqual(1);
+            });
+
+            it('should return zero counts for a user with no connections', async () => {
+                await loginAs(userC);
+                const response = await client.get(`/api/v1/users/${userC.id}/connection-counts`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.data.connectionCount).toBe(0);
+                expect(response.data.data.pendingCount).toBe(0);
+            });
+        });
+
+        describe('POST /api/v1/users/:id/connect - Mutual Request Auto-Accept', () => {
+            it('should auto-accept when both users request each other', async () => {
+                await loginAs(userC);
+                const sent = await client.post(`/api/v1/users/${userA.id}/connect`);
+                expect(sent.status).toBe(200);
+                expect(sent.data.message).toBe('Connection request sent');
+
+                await loginAs(userA);
+                const response = await client.post(`/api/v1/users/${userC.id}/connect`);
+
+                expect(response.status).toBe(200);
+                expect(response.data).toEqual({
+                    success: true,
+                    message: 'Connection request accepted (mutual request)'
                 });
             });
 
-            it('should return 400 when not following the user', async () => {
+            it('should report connected after the mutual auto-accept', async () => {
                 await loginAs(userA);
-                const response = await client.delete(`/api/v1/users/${userB.id}/follow`);
+                const response = await client.get(`/api/v1/users/${userC.id}/connection-status`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.data).toEqual({ status: 'connected', isConnected: true });
+            });
+        });
+
+        describe('PUT /api/v1/users/:id/connect - Reject and Re-request', () => {
+            it('should reject a pending request', async () => {
+                await loginAs(userB);
+                const sent = await client.post(`/api/v1/users/${userC.id}/connect`);
+                expect(sent.status).toBe(200);
+
+                await loginAs(userC);
+                const response = await client.put(`/api/v1/users/${userB.id}/connect`, { action: 'reject' });
+
+                expect(response.status).toBe(200);
+                expect(response.data).toEqual({
+                    success: true,
+                    message: 'Connection request rejected'
+                });
+            });
+
+            it('should report rejected status after rejection', async () => {
+                await loginAs(userB);
+                const response = await client.get(`/api/v1/users/${userC.id}/connection-status`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.data.status).toBe('rejected');
+                expect(response.data.data.isConnected).toBe(false);
+            });
+
+            it('should allow re-requesting after a rejection', async () => {
+                await loginAs(userB);
+                const response = await client.post(`/api/v1/users/${userC.id}/connect`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.message).toBe('Connection request sent');
+            });
+        });
+
+        describe('DELETE /api/v1/users/:id/connect - Remove Connection', () => {
+            it('should remove an accepted connection', async () => {
+                await loginAs(userA);
+                const response = await client.delete(`/api/v1/users/${userB.id}/connect`);
+
+                expect(response.status).toBe(200);
+                expect(response.data).toEqual({
+                    success: true,
+                    message: 'Connection removed'
+                });
+            });
+
+            it('should return 400 when no connection exists', async () => {
+                await loginAs(userA);
+                const response = await client.delete(`/api/v1/users/${userB.id}/connect`);
 
                 expect(response.status).toBe(400);
                 expect(response.data.success).toBe(false);
-                expect(response.data.message).toMatch(/not following/i);
+                expect(response.data.message).toMatch(/no connection found/i);
             });
 
             it('should require authentication', async () => {
                 client.clearCookies();
-                const response = await client.delete(`/api/v1/users/${userB.id}/follow`);
+                const response = await client.delete(`/api/v1/users/${userB.id}/connect`);
 
                 expect(response.status).toBe(401);
             });
 
-            it('should reflect in follow counts after unfollow', async () => {
+            it('should report none status after removal', async () => {
                 await loginAs(userA);
-                const response = await client.get(`/api/v1/users/${userA.id}/follow-counts`);
+                const response = await client.get(`/api/v1/users/${userB.id}/connection-status`);
 
                 expect(response.status).toBe(200);
-                expect(response.data.data.followingCount).toBe(0);
+                expect(response.data.data).toEqual({ status: 'none', isConnected: false });
+            });
+
+            it('should reflect the removal in connection counts', async () => {
+                await loginAs(userA);
+                const response = await client.get(`/api/v1/users/${userA.id}/connection-counts`);
+
+                expect(response.status).toBe(200);
+                // userA remains connected to userC via the mutual auto-accept
+                expect(response.data.data.connectionCount).toBe(1);
             });
         });
     });

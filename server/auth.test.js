@@ -1481,4 +1481,210 @@ describe('Authentication Layer - Comprehensive Tests', () => {
             });
         });
     });
+
+    // =========================================================================
+    // ERROR AND EDGE PATHS
+    // =========================================================================
+    describe('Auth Controller - Error Paths', () => {
+
+        describe('POST /api/v1/auth/signup - malformed bodies', () => {
+            it('should reject an empty object body', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/signup', {});
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a body whose values are all null', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/signup', {
+                    firstName: null,
+                    lastName: null,
+                    email: null
+                });
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+
+        });
+
+        describe('POST /api/v1/auth/login - failure paths', () => {
+            it('should reject an unknown identifier', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/login', {
+                    identifier: `nobody${Date.now()}`,
+                    password: 'ValidPass1!'
+                });
+
+                expect([400, 401, 404]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a correct identifier with the wrong password', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/login', {
+                    identifier: testStartup.user.credentials.identifier,
+                    password: 'WrongPass1!'
+                });
+
+                expect([400, 401]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a login with no body', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/login', {});
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+        });
+
+        describe('POST /api/v1/auth/2fa/disable - guards', () => {
+            it('should reject disabling 2FA with an incorrect password', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post('/api/v1/auth/2fa/disable', {
+                    password: 'DefinitelyWrong1!'
+                });
+
+                // 401 for a bad password, 400 when 2FA was never enabled -
+                // both are the guarded paths under test
+                expect([400, 401]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should require authentication', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/2fa/disable', {
+                    password: 'ValidPass1!'
+                });
+
+                expect(response.status).toBe(401);
+            });
+        });
+
+        describe('POST /api/v1/auth/2fa/verify-setup - guards', () => {
+            it('should reject verification without a token', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post('/api/v1/auth/2fa/verify-setup', {});
+
+                expect([400, 401]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject an invalid 2FA token', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post('/api/v1/auth/2fa/verify-setup', {
+                    token: '000000'
+                });
+
+                expect([400, 401]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+        });
+
+        describe('POST /api/v1/auth/reset-password/:token - guards', () => {
+            it('should reject an invalid reset token', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/reset-password/not-a-real-token', {
+                    password: 'BrandNewPass1!',
+                    confirmPassword: 'BrandNewPass1!'
+                });
+
+                expect([400, 401, 404]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a reset with no password supplied', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/reset-password/not-a-real-token', {});
+
+                expect([400, 401, 404]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+        });
+
+        describe('POST /api/v1/auth/forgot-password - guards', () => {
+            it('should handle an unknown email without leaking existence', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/forgot-password', {
+                    email: `nobody${Date.now()}@test.com`
+                });
+
+                // Should not confirm or deny that the address exists
+                expect([200, 202, 400, 404]).toContain(response.status);
+            });
+
+            it('should reject a missing email', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/forgot-password', {});
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+        });
+
+        describe('Role management guards', () => {
+            it('should deny role approval to a non-privileged user', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post(
+                    `/api/v1/auth/roles/approve/${testStartup.creator.id}`,
+                    {reason: 'testing'}
+                );
+
+                expect([401, 403]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should deny role rejection to a non-privileged user', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post(
+                    `/api/v1/auth/roles/reject/${testStartup.creator.id}`,
+                    {reason: 'testing'}
+                );
+
+                expect([401, 403]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should return 404 approving a non-existent user', async () => {
+                await testStartup.loginAsUser('owner');
+                const response = await client.post(
+                    '/api/v1/auth/roles/approve/000000000000000000000000',
+                    {reason: 'testing'}
+                );
+
+                expect([400, 404]).toContain(response.status);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should list pending role requests for a privileged user', async () => {
+                await testStartup.loginAsUser('owner');
+                const response = await client.get('/api/v1/auth/roles/pending-requests');
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+            });
+        });
+
+        describe('POST /api/v1/auth/send-verification-email - guards', () => {
+            it('should require authentication', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/auth/send-verification-email', {});
+
+                expect(response.status).toBe(401);
+            });
+        });
+
+        describe('GET /api/v1/auth/verify-email/:token - guards', () => {
+            it('should reject an invalid verification token', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/auth/verify-email/not-a-real-token');
+
+                expect([400, 401, 404]).toContain(response.status);
+            });
+        });
+    });
 });

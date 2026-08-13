@@ -40,19 +40,30 @@ class TestStartup {
     }
 
     /**
-     * Generate unique database name for this test file
+     * Resolve the database name for this test file.
+     *
+     * Sequential runs (the default) share one database, so all test resources
+     * live together and are easy to inspect. Parallel runs need a database per
+     * file, because suites perform global destructive operations - clearing all
+     * logs, flushing the whole cache - that would corrupt a sibling file
+     * running at the same time.
+     *
+     * TEST_PARALLEL is the single switch for both: vitest.config.js reads it
+     * to set fileParallelism, and this method reads it to pick the database.
      */
     generateDbName() {
-        const baseDbName = process.env.MONGODB_URI?.split('/').pop()?.split('?')[0] || 'app-base-test-db';
-        return `${baseDbName}-${this.testIdentifier}`;
+        const baseDbName = process.env.MONGODB_URI.split('/').pop().split('?')[0];
+        return process.env.TEST_PARALLEL === 'true'
+            ? `${baseDbName}-${this.testIdentifier}`
+            : baseDbName;
     }
 
     /**
      * Get a random port from the allowed test port range
      */
     getRandomPort() {
-        const minPort = parseInt(process.env.PORT_RANGE_MIN) || 8380;
-        const maxPort = parseInt(process.env.PORT_RANGE_MAX) || 8389;
+        const minPort = parseInt(process.env.PORT_RANGE_MIN);
+        const maxPort = parseInt(process.env.PORT_RANGE_MAX);
         return Math.floor(Math.random() * (maxPort - minPort + 1)) + minPort;
     }
 
@@ -104,7 +115,7 @@ class TestStartup {
             lastName,
             username,
             email,
-            password: await bcrypt.hash('TestPass123!', 12),
+            password: await bcrypt.hash('TestPass123!', parseInt(process.env.BCRYPT_ROUNDS)),
             roles: [role],
             emailVerified: true,
             active: true
@@ -174,12 +185,18 @@ class TestStartup {
         if (!user) {
             throw new Error(`User type '${userType}' not found`);
         }
-        
+
+        // Already holding a live session for this role - skip the round-trip
+        if (this.client.authenticatedAs === userType) {
+            return null;
+        }
+
         const response = await this.client.post('/api/v1/auth/login', user.credentials);
         if (response?.status !== 200) {
             throw new Error(`Failed to login as ${userType}: ${response?.data?.message || 'Unknown error'}`);
         }
-        
+
+        this.client.authenticatedAs = userType;
         return response;
     }
 
@@ -673,9 +690,14 @@ class TestStartup {
                 throw new Error('Database connection not available for cleanup');
             }
 
-            const collections = await dbConnection.db.collections();
+            // Test-run metadata is history, not fixture data: dropping it would
+            // erase the record of every previous run.
+            const PRESERVED = new Set(['test-runs', 'test-case-results']);
+
+            const allCollections = await dbConnection.db.collections();
+            const collections = allCollections.filter(c => !PRESERVED.has(c.collectionName));
             console.log(`🗑️ Dropping ${collections.length} collections...`);
-            
+
             for (const collection of collections) {
                 try {
                     await collection.drop();
@@ -686,7 +708,7 @@ class TestStartup {
                     }
                 }
             }
-            
+
             console.log('✅ Database cleanup completed');
         } catch (error) {
             console.error('❌ Database cleanup error:', error.message);

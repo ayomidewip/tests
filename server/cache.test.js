@@ -14,6 +14,11 @@ describe('Cache Controller, Middleware, and Routes - Comprehensive Tests', () =>
         testStartup = new TestStartup('cache');
         await testStartup.initialize();
         client = testStartup.getClient();
+
+        // Start from an empty cache - file order is shuffled
+        await testStartup.loginAsUser('admin');
+        await client.delete('/api/v1/cache');
+
         console.log('Cache tests initialized on port:', testStartup.port, 'DB:', testStartup.dbName);
     }, 60000);
 

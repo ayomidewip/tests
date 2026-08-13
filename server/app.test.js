@@ -792,4 +792,711 @@ describe('App Controller and Routes - Comprehensive Tests', () => {
             });
         });
     });
+
+    // =========================================================================
+    // FILTER SYSTEM (parseFilters / getFilterSummary)
+    // =========================================================================
+    // Exercised directly rather than over HTTP: these are pure functions, and
+    // driving every branch through a request would cost seconds per case for
+    // no extra confidence. The endpoints that consume them are covered above.
+    describe('Filter System', () => {
+        let parseFilters;
+        let getFilterSummary;
+
+        beforeAll(async () => {
+            const mod = await import('../../server/controllers/app.controller.js');
+            parseFilters = mod.parseFilters;
+            getFilterSummary = mod.getFilterSummary;
+        });
+
+        describe('pagination', () => {
+            it('should compute skip from page and limit', () => {
+                const {options} = parseFilters({page: '3', limit: '10'});
+                expect(options.pagination.skip).toBe(20);
+                expect(options.pagination.limit).toBe(10);
+            });
+
+            it('should treat page 1 as zero skip', () => {
+                const {options} = parseFilters({page: '1', limit: '25'});
+                expect(options.pagination.skip).toBe(0);
+                expect(options.pagination.limit).toBe(25);
+            });
+        });
+
+        describe('sorting', () => {
+            it('should sort descending by default', () => {
+                const {options} = parseFilters({sortBy: 'createdAt'});
+                expect(options.sort.createdAt).toBe(-1);
+            });
+
+            it('should honour an explicit ascending order', () => {
+                const {options} = parseFilters({sortBy: 'username', sortOrder: 'asc'});
+                expect(options.sort.username).toBe(1);
+            });
+        });
+
+        describe('period shortcuts', () => {
+            const cases = [
+                ['1h', 60 * 60 * 1000],
+                ['24h', 24 * 60 * 60 * 1000],
+                ['1d', 24 * 60 * 60 * 1000],
+                ['7d', 7 * 24 * 60 * 60 * 1000],
+                ['1w', 7 * 24 * 60 * 60 * 1000],
+                ['30d', 30 * 24 * 60 * 60 * 1000],
+                ['1m', 30 * 24 * 60 * 60 * 1000],
+                ['90d', 90 * 24 * 60 * 60 * 1000],
+                ['3m', 90 * 24 * 60 * 60 * 1000],
+                ['1y', 365 * 24 * 60 * 60 * 1000]
+            ];
+
+            for (const [period, ms] of cases) {
+                it(`should translate period "${period}" into a createdAt lower bound`, () => {
+                    const before = Date.now();
+                    const {filters} = parseFilters({period});
+                    const after = Date.now();
+
+                    expect(filters.createdAt).toBeDefined();
+                    const gte = new Date(filters.createdAt.$gte).getTime();
+                    expect(gte).toBeGreaterThanOrEqual(before - ms - 1000);
+                    expect(gte).toBeLessThanOrEqual(after - ms + 1000);
+                });
+            }
+
+            it('should ignore an unrecognised period', () => {
+                const {filters} = parseFilters({period: 'not-a-period'});
+                expect(filters.createdAt).toBeUndefined();
+            });
+        });
+
+        describe('statusCode filters', () => {
+            it('should match a single status code', () => {
+                const {filters} = parseFilters({statusCode: '404'});
+                expect(filters.statusCode).toBe(404);
+            });
+
+            it('should expand a comma-separated list into $in', () => {
+                const {filters} = parseFilters({statusCode: '200,201,204'});
+                expect(filters.statusCode).toEqual({$in: [200, 201, 204]});
+            });
+
+            it('should expand a range into $gte/$lte', () => {
+                const {filters} = parseFilters({statusCode: '400-499'});
+                expect(filters.statusCode).toEqual({$gte: 400, $lte: 499});
+            });
+
+            it('should discard non-numeric entries in a list', () => {
+                const {filters} = parseFilters({statusCode: '200,abc,404'});
+                expect(filters.statusCode).toEqual({$in: [200, 404]});
+            });
+
+            it('should ignore a range with non-numeric bounds', () => {
+                const {filters} = parseFilters({statusCode: 'abc-def'});
+                expect(filters.statusCode).toBeUndefined();
+            });
+        });
+
+        describe('numeric range filters', () => {
+            it('should apply a minimum size', () => {
+                const {filters} = parseFilters({minSize: '1024'});
+                expect(filters.size).toEqual({$gte: 1024});
+            });
+
+            it('should apply a maximum size', () => {
+                const {filters} = parseFilters({maxSize: '5000'});
+                expect(filters.size).toEqual({$lte: 5000});
+            });
+
+            it('should apply both bounds together', () => {
+                const {filters} = parseFilters({minSize: '100', maxSize: '900'});
+                expect(filters.size).toEqual({$gte: 100, $lte: 900});
+            });
+
+            it('should ignore non-numeric size bounds', () => {
+                const {filters} = parseFilters({minSize: 'abc', maxSize: 'def'});
+                expect(filters.size).toBeUndefined();
+            });
+
+            it('should apply response-time bounds', () => {
+                const {filters} = parseFilters({minResponseTime: '10', maxResponseTime: '500'});
+                expect(filters.responseTime).toEqual({$gte: 10, $lte: 500});
+            });
+        });
+
+        describe('direct and coerced field filters', () => {
+            it('should pass through an HTTP method', () => {
+                const {filters} = parseFilters({method: 'POST'});
+                expect(filters.method).toBeDefined();
+            });
+
+            it('should pass through an ip', () => {
+                const {filters} = parseFilters({ip: '127.0.0.1'});
+                expect(filters.ip).toBeDefined();
+            });
+
+            it('should coerce boolean-looking values', () => {
+                expect(parseFilters({active: 'true'}).filters.active).toBe(true);
+                expect(parseFilters({active: 'false'}).filters.active).toBe(false);
+            });
+        });
+
+        describe('empty and malformed input', () => {
+            it('should return filters and options for an empty query', () => {
+                const result = parseFilters({});
+                expect(result).toHaveProperty('filters');
+                expect(result).toHaveProperty('options');
+            });
+
+            it('should not throw on unknown query parameters', () => {
+                expect(() => parseFilters({somethingUnknown: 'value'})).not.toThrow();
+            });
+        });
+
+        describe('getFilterSummary', () => {
+            it('should summarise pagination back out', () => {
+                const {filters, options} = parseFilters({page: '2', limit: '15'});
+                const summary = getFilterSummary(filters, options);
+
+                expect(summary.pagination).toBeDefined();
+                expect(summary.pagination.page).toBe(2);
+                expect(summary.pagination.limit).toBe(15);
+            });
+
+            it('should not throw for an empty filter set', () => {
+                const {filters, options} = parseFilters({});
+                expect(() => getFilterSummary(filters, options)).not.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // VALIDATOR (custom Joi extensions used by models/schemas.js)
+    // =========================================================================
+    // Pure functions, exercised directly for the same reason as the filters above.
+    describe('Validator - Custom Joi Extensions', () => {
+        let Joi;
+        let objectId;
+        let password;
+        let futureDate;
+        let filePath;
+        let phoneNumber;
+        let positiveNumber;
+
+        beforeAll(async () => {
+            const mod = await import('../../server/utils/validator.js');
+            Joi = mod.Joi;
+            objectId = mod.objectId;
+            password = mod.password;
+            futureDate = mod.futureDate;
+            filePath = mod.filePath;
+            phoneNumber = mod.phoneNumber;
+            positiveNumber = mod.positiveNumber;
+        });
+
+        // NOTE: objectId, futureDate and filePath are reached via Joi.objectId()
+        // rather than their named exports. Those exports are bare references to
+        // the Joi type functions, so destructuring detaches `this` and calling
+        // them throws "Must be invoked on a Joi instance".
+        describe('objectId', () => {
+            it('should accept a valid 24-character hex ObjectId', () => {
+                const {error, value} = objectId().validate('507f1f77bcf86cd799439011');
+                expect(error).toBeUndefined();
+                expect(value).toBe('507f1f77bcf86cd799439011');
+            });
+
+            it('should reject a string that is not a valid ObjectId', () => {
+                const {error} = objectId().validate('not-an-object-id');
+                expect(error).toBeDefined();
+                expect(error.message).toMatch(/valid MongoDB ObjectID/i);
+            });
+
+            it('should reject a hex string of the wrong length', () => {
+                expect(objectId().validate('507f1f77bcf86cd7994390').error).toBeDefined();
+            });
+
+            it('should reject an empty string', () => {
+                expect(objectId().validate('').error).toBeDefined();
+            });
+        });
+
+        describe('password complexity', () => {
+            it('should accept a password meeting every requirement', () => {
+                expect(password().validate('ValidPass1!').error).toBeUndefined();
+            });
+
+            it('should accept each supported special character', () => {
+                for (const special of ['!', '@', '#', '$', '%', '^', '&', '*', '_', '-', '=', '?', '~']) {
+                    const {error} = password().validate(`ValidPass1${special}`);
+                    expect(error, `special character ${special} should be accepted`).toBeUndefined();
+                }
+            });
+
+            it('should reject a password with no uppercase letter', () => {
+                const {error} = password().validate('validpass1!');
+                expect(error).toBeDefined();
+                expect(error.message).toMatch(/uppercase/i);
+            });
+
+            it('should reject a password with no lowercase letter', () => {
+                expect(password().validate('VALIDPASS1!').error).toBeDefined();
+            });
+
+            it('should reject a password with no digit', () => {
+                expect(password().validate('ValidPass!').error).toBeDefined();
+            });
+
+            it('should reject a password with no special character', () => {
+                expect(password().validate('ValidPass1').error).toBeDefined();
+            });
+
+            it('should reject a password shorter than 8 characters', () => {
+                expect(password().validate('Val1!').error).toBeDefined();
+            });
+
+            it('should reject a password longer than 30 characters', () => {
+                expect(password().validate('V1!' + 'a'.repeat(30)).error).toBeDefined();
+            });
+
+            it('should accept the boundary lengths of 8 and 30', () => {
+                expect(password().validate('Valid1a!').error).toBeUndefined();
+                expect(password().validate('Valid1a!' + 'b'.repeat(22)).error).toBeUndefined();
+            });
+        });
+
+        describe('futureDate', () => {
+            it('should accept a date in the future', () => {
+                const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                expect(futureDate().validate(tomorrow).error).toBeUndefined();
+            });
+
+            it('should reject a date in the past', () => {
+                const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                const {error} = futureDate().validate(yesterday);
+                expect(error).toBeDefined();
+                expect(error.message).toMatch(/future date/i);
+            });
+
+            it('should reject a value that is not a date', () => {
+                expect(futureDate().validate('not-a-date').error).toBeDefined();
+            });
+        });
+
+        describe('filePath', () => {
+            it('should accept absolute Unix paths including root', () => {
+                expect(filePath().validate('/documents/report.txt').error).toBeUndefined();
+                expect(filePath().validate('/').error).toBeUndefined();
+                expect(filePath().validate('/a/b/c/d/file.md').error).toBeUndefined();
+            });
+
+            it('should decode a base64-encoded path and accept it', () => {
+                const encoded = Buffer.from('/documents/report.txt', 'utf-8').toString('base64');
+                expect(filePath().validate(encoded).error).toBeUndefined();
+            });
+
+            it('should reject a relative path', () => {
+                const {error} = filePath().validate('documents/report.txt');
+                expect(error).toBeDefined();
+                expect(error.message).toMatch(/Unix-style file path/i);
+            });
+
+            it('should reject double slashes, null bytes and trailing slashes', () => {
+                expect(filePath().validate('/documents//report.txt').error).toBeDefined();
+                expect(filePath().validate('/documents/re\0port.txt').error).toBeDefined();
+                expect(filePath().validate('/documents/').error).toBeDefined();
+            });
+
+            it('should reject relative traversal components', () => {
+                expect(filePath().validate('/documents/../secret').error).toBeDefined();
+                expect(filePath().validate('/documents/./report.txt').error).toBeDefined();
+            });
+
+            it('should reject Windows-invalid characters in a component', () => {
+                for (const bad of ['<', '>', ':', '"', '|', '*', '?']) {
+                    const {error} = filePath().validate(`/documents/re${bad}port.txt`);
+                    expect(error, `character ${bad} should be rejected`).toBeDefined();
+                }
+            });
+
+            it('should reject paths and components that are too long', () => {
+                expect(filePath().validate('/' + 'a'.repeat(4100)).error).toBeDefined();
+                expect(filePath().validate('/' + 'a'.repeat(300)).error).toBeDefined();
+            });
+
+            it('should reject an empty string', () => {
+                expect(filePath().validate('').error).toBeDefined();
+            });
+        });
+
+        describe('phoneNumber', () => {
+            it('should accept E.164 numbers with and without the leading plus', () => {
+                expect(phoneNumber.validate('+14155552671').error).toBeUndefined();
+                expect(phoneNumber.validate('14155552671').error).toBeUndefined();
+            });
+
+            it('should reject a number starting with zero', () => {
+                expect(phoneNumber.validate('+04155552671').error).toBeDefined();
+            });
+
+            it('should reject a number containing letters', () => {
+                expect(phoneNumber.validate('+1415555ABCD').error).toBeDefined();
+            });
+
+            it('should reject a number longer than 15 digits', () => {
+                expect(phoneNumber.validate('+1234567890123456').error).toBeDefined();
+            });
+        });
+
+        describe('positiveNumber', () => {
+            it('should accept positive integers and fractions', () => {
+                expect(positiveNumber.validate(42).error).toBeUndefined();
+                expect(positiveNumber.validate(0.5).error).toBeUndefined();
+            });
+
+            it('should reject zero and negatives', () => {
+                expect(positiveNumber.validate(0).error).toBeDefined();
+                expect(positiveNumber.validate(-1).error).toBeDefined();
+            });
+
+            it('should reject a non-numeric value', () => {
+                expect(positiveNumber.validate('abc').error).toBeDefined();
+            });
+        });
+
+        describe('composition inside an object schema', () => {
+            it('should compose custom types and reject invalid members', () => {
+                const schema = Joi.object({
+                    id: Joi.objectId().required(),
+                    secret: Joi.password().complexity().required()
+                });
+
+                expect(schema.validate({
+                    id: '507f1f77bcf86cd799439011',
+                    secret: 'ValidPass1!'
+                }).error).toBeUndefined();
+
+                expect(schema.validate({id: 'bad', secret: 'ValidPass1!'}).error).toBeDefined();
+            });
+        });
+    });
+
+    // =========================================================================
+    // THEME SYSTEM
+    // =========================================================================
+    describe('Theme System', () => {
+        // Minimum valid token set - the schema requires these seven colours
+        const validTokens = () => ({
+            darkMode: false,
+            colors: {
+                primary: '#3F84E5',
+                primaryAccent: '#2A5FA8',
+                secondary: '#E5A03F',
+                secondaryAccent: '#A8742A',
+                background: '#FFFFFF',
+                surface: '#F5F5F5',
+                text: '#111111',
+                textContrast: '#FFFFFF'
+            }
+        });
+
+        const themeBody = (suffix, overrides = {}) => ({
+            name: `Test Theme ${suffix}`,
+            slug: `test-theme-${suffix}`,
+            description: 'Created by the theme test suite',
+            tokens: validTokens(),
+            ...overrides
+        });
+
+        let ownedThemeId;
+        let publicThemeId;
+        let uniq;
+
+        beforeAll(async () => {
+            uniq = Date.now().toString().slice(-6);
+        });
+
+        describe('GET /api/v1/themes/presets', () => {
+            it('should return presets without authentication', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/themes/presets');
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+            });
+        });
+
+        describe('POST /api/v1/themes', () => {
+            it('should create a theme for a creator', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.post('/api/v1/themes', themeBody(`a${uniq}`));
+
+                expect(response.status).toBe(201);
+                expect(response.data.success).toBe(true);
+
+                const theme = response.data.theme || response.data.data;
+                expect(theme).toBeDefined();
+                expect(theme.name).toBe(`Test Theme a${uniq}`);
+                ownedThemeId = theme._id || theme.id;
+            });
+
+            it('should default visibility to private', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.post('/api/v1/themes', themeBody(`b${uniq}`));
+
+                expect(response.status).toBe(201);
+                const theme = response.data.theme || response.data.data;
+                expect(theme.visibility).toBe('private');
+            });
+
+            it('should create a public theme when asked', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.post('/api/v1/themes',
+                    themeBody(`pub${uniq}`, {visibility: 'public'}));
+
+                expect(response.status).toBe(201);
+                const theme = response.data.theme || response.data.data;
+                expect(theme.visibility).toBe('public');
+                publicThemeId = theme._id || theme.id;
+            });
+
+            it('should reject a theme with no name', async () => {
+                await testStartup.loginAsUser('creator');
+                const body = themeBody(`c${uniq}`);
+                delete body.name;
+
+                const response = await client.post('/api/v1/themes', body);
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a slug with invalid characters', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.post('/api/v1/themes',
+                    themeBody(`d${uniq}`, {slug: 'Invalid Slug!'}));
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject tokens with a non-hex colour', async () => {
+                await testStartup.loginAsUser('creator');
+                const tokens = validTokens();
+                tokens.colors.primary = 'not-a-colour';
+
+                const response = await client.post('/api/v1/themes',
+                    themeBody(`e${uniq}`, {tokens}));
+
+                expect(response.status).toBe(400);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should reject a theme missing required colours', async () => {
+                await testStartup.loginAsUser('creator');
+                const tokens = validTokens();
+                delete tokens.colors.background;
+
+                const response = await client.post('/api/v1/themes',
+                    themeBody(`f${uniq}`, {tokens}));
+
+                expect(response.status).toBe(400);
+            });
+
+            it('should deny creation to a user without CREATE_CONTENT', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post('/api/v1/themes', themeBody(`g${uniq}`));
+
+                expect(response.status).toBe(403);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should require authentication', async () => {
+                client.clearCookies();
+                const response = await client.post('/api/v1/themes', themeBody(`h${uniq}`));
+
+                expect(response.status).toBe(401);
+            });
+        });
+
+        describe('GET /api/v1/themes', () => {
+            it('should list the caller\'s own themes', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.get('/api/v1/themes');
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+
+                const themes = response.data.themes || response.data.data;
+                expect(Array.isArray(themes)).toBe(true);
+                const ids = themes.map(t => (t._id || t.id).toString());
+                expect(ids).toContain(ownedThemeId.toString());
+            });
+
+            it('should not list another user\'s private themes', async () => {
+                await testStartup.loginAsUser('superCreator');
+                const response = await client.get('/api/v1/themes');
+
+                expect(response.status).toBe(200);
+                const themes = response.data.themes || response.data.data;
+                const ids = themes.map(t => (t._id || t.id).toString());
+                expect(ids).not.toContain(ownedThemeId.toString());
+            });
+
+            it('should require authentication', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/themes');
+                expect(response.status).toBe(401);
+            });
+        });
+
+        describe('GET /api/v1/themes/public', () => {
+            it('should list public themes without authentication', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/themes/public');
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+            });
+
+            it('should include a public theme and exclude a private one', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/themes/public');
+
+                const themes = response.data.themes || response.data.data || [];
+                const ids = themes.map(t => (t._id || t.id).toString());
+                expect(ids).toContain(publicThemeId.toString());
+                expect(ids).not.toContain(ownedThemeId.toString());
+            });
+
+            it('should support a search query', async () => {
+                client.clearCookies();
+                const response = await client.get('/api/v1/themes/public?search=Test');
+                expect(response.status).toBe(200);
+            });
+        });
+
+        describe('GET /api/v1/themes/:id', () => {
+            it('should return a theme to its owner', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.get(`/api/v1/themes/${ownedThemeId}`);
+
+                expect(response.status).toBe(200);
+                const theme = response.data.theme || response.data.data;
+                expect((theme._id || theme.id).toString()).toBe(ownedThemeId.toString());
+            });
+
+            it('should return 404 for a non-existent theme', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.get('/api/v1/themes/000000000000000000000000');
+                expect(response.status).toBe(404);
+            });
+
+            it('should reject a malformed id', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.get('/api/v1/themes/not-an-id');
+                expect([400, 404]).toContain(response.status);
+            });
+        });
+
+        describe('PUT /api/v1/themes/:id', () => {
+            it('should let the owner rename their theme', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.put(`/api/v1/themes/${ownedThemeId}`,
+                    {name: `Renamed ${uniq}`});
+
+                expect(response.status).toBe(200);
+                const theme = response.data.theme || response.data.data;
+                expect(theme.name).toBe(`Renamed ${uniq}`);
+            });
+
+            it('should deny a non-owner without MANAGE_ALL_CONTENT', async () => {
+                await testStartup.loginAsUser('superCreator');
+                const response = await client.put(`/api/v1/themes/${ownedThemeId}`,
+                    {name: 'Hijacked'});
+
+                expect(response.status).toBe(403);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should allow an admin to update any theme', async () => {
+                await testStartup.loginAsUser('admin');
+                const response = await client.put(`/api/v1/themes/${ownedThemeId}`,
+                    {description: 'Updated by admin'});
+
+                expect(response.status).toBe(200);
+            });
+
+            it('should reject an invalid visibility value', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.put(`/api/v1/themes/${ownedThemeId}`,
+                    {visibility: 'somewhere-else'});
+
+                expect(response.status).toBe(400);
+            });
+        });
+
+        describe('POST /api/v1/themes/:id/fork', () => {
+            it('should fork a public theme and record its origin', async () => {
+                await testStartup.loginAsUser('superCreator');
+                const response = await client.post(`/api/v1/themes/${publicThemeId}/fork`, {});
+
+                expect(response.status).toBe(201);
+                const theme = response.data.theme || response.data.data;
+                expect(theme).toBeDefined();
+                expect((theme.forkedFrom || '').toString()).toBe(publicThemeId.toString());
+            });
+
+            it('should give the fork to the caller, not the original owner', async () => {
+                await testStartup.loginAsUser('superCreator');
+                const response = await client.get('/api/v1/themes');
+
+                const themes = response.data.themes || response.data.data;
+                const forks = themes.filter(t => t.forkedFrom);
+                expect(forks.length).toBeGreaterThan(0);
+            });
+
+            it('should deny forking to a user without CREATE_CONTENT', async () => {
+                await testStartup.loginAsUser('user');
+                const response = await client.post(`/api/v1/themes/${publicThemeId}/fork`, {});
+
+                expect(response.status).toBe(403);
+            });
+
+            it('should return 404 when forking a non-existent theme', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.post('/api/v1/themes/000000000000000000000000/fork', {});
+
+                expect(response.status).toBe(404);
+            });
+        });
+
+        describe('DELETE /api/v1/themes/:id', () => {
+            it('should deny deletion to a non-owner', async () => {
+                await testStartup.loginAsUser('superCreator');
+                const response = await client.delete(`/api/v1/themes/${ownedThemeId}`);
+
+                expect(response.status).toBe(403);
+                expect(response.data.success).toBe(false);
+            });
+
+            it('should let the owner delete their theme', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.delete(`/api/v1/themes/${ownedThemeId}`);
+
+                expect(response.status).toBe(200);
+                expect(response.data.success).toBe(true);
+            });
+
+            it('should return 404 once the theme is gone', async () => {
+                await testStartup.loginAsUser('creator');
+                const response = await client.get(`/api/v1/themes/${ownedThemeId}`);
+
+                expect(response.status).toBe(404);
+            });
+
+            it('should require authentication', async () => {
+                client.clearCookies();
+                const response = await client.delete(`/api/v1/themes/${publicThemeId}`);
+
+                expect(response.status).toBe(401);
+            });
+        });
+    });
 });
